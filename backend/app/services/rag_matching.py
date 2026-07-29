@@ -13,7 +13,7 @@ from app.config import settings
 from app.core.app_logging import get_logger
 from app.core.embeddings import embed_texts
 from app.core.llm import call_llm, call_structured
-from app.core.reranker import rerank
+from app.core.reranker import RerankUnavailable, rerank
 from app.core.vector_store import fetch_chunks, upsert_chunks
 from app.models.schemas import (
     CertificationSuggestionList,
@@ -197,9 +197,22 @@ def retrieve_evidence(
             candidate_texts,
         )
 
-        rerank_scores = rerank(requirement, candidate_texts)
-        ranked = sorted(zip(candidate_texts, rerank_scores), key=lambda pair: pair[1], reverse=True)
-        evidence_map[requirement] = [snippet for snippet, _ in ranked[:top_k]]
+        try:
+            rerank_scores = rerank(requirement, candidate_texts)
+            ranked = sorted(zip(candidate_texts, rerank_scores), key=lambda pair: pair[1], reverse=True)
+            evidence_map[requirement] = [snippet for snippet, _ in ranked[:top_k]]
+        except RerankUnavailable:
+            # candidate_texts is already ordered by the fusion score (see
+            # candidate_idx above) -- falling back to that order instead of
+            # failing the whole analysis when Cohere's rerank quota is spent.
+            rerank_scores = None
+            logger.warning(
+                "retrieve_evidence filename=%s requirement=%r rerank unavailable, "
+                "falling back to fusion-only ranking",
+                filename,
+                requirement,
+            )
+            evidence_map[requirement] = candidate_texts[:top_k]
 
         logger.debug(
             "retrieve_evidence filename=%s requirement=%r rerank_scores=%r final_evidence=%r",
