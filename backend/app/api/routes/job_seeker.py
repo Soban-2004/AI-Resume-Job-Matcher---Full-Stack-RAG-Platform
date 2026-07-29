@@ -3,6 +3,7 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.rate_limit import enforce_job_creation_rate_limit
 from app.db import crud
 from app.db.session import get_db_session
 from app.models.schemas import (
@@ -29,24 +30,6 @@ _STAGE_DEFS = [
     ("cover_letter", "Writing cover letter"),
     ("improvements", "Suggesting improvements"),
 ]
-
-
-@router.post("/analyze", response_model=JobSeekerAnalysisResponse)
-async def analyze(
-    resume: UploadFile = File(...),
-    job_description: UploadFile = File(...),
-    job_role: str = Form(...),
-) -> JobSeekerAnalysisResponse:
-    resume_bytes = await resume.read()
-    jd_bytes = await job_description.read()
-
-    resume_text = load_document(resume.filename or "", resume_bytes)
-    jd_text = load_document(job_description.filename or "", jd_bytes)
-
-    if not resume_text or not jd_text:
-        raise HTTPException(status_code=400, detail="Could not read one or both files.")
-
-    return analyze_job_seeker(resume_text, jd_text, job_role)
 
 
 def _persist_report(
@@ -115,6 +98,8 @@ async def create_job(
     job_role: str = Form(...),
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
+    enforce_job_creation_rate_limit(user.id)
+
     resume_bytes = await resume.read()
     jd_bytes = await job_description.read()
 

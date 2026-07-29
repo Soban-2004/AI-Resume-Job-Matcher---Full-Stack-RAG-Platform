@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Recruiting Team"
     smtp_use_tls: bool = True
 
+    # Caps how many analysis jobs one user can start per rolling window --
+    # see app/core/rate_limit.py. A free Supabase signup is no real barrier
+    # to someone scripting a loop against the job-creation endpoints, and
+    # each job triggers real Groq/Gemini/Cohere/Qdrant calls.
+    job_rate_limit_max_per_window: int = 10
+    job_rate_limit_window_seconds: int = 3600
+
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""

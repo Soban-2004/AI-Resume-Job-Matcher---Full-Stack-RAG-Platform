@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.rate_limit import enforce_job_creation_rate_limit
 from app.db import crud
 from app.db.session import get_db_session
 from app.models.schemas import CandidateStatus, JobStatusResponse, RecruiterAnalysisResponse, StageStatus
@@ -213,6 +214,8 @@ async def create_job(
     resumes: list[UploadFile] = File(...),
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
+    enforce_job_creation_rate_limit(user.id)
+
     db = get_db_session()
     try:
         project = crud.get_project(db, user.id, project_id)
@@ -314,11 +317,19 @@ class SendEmailRequest(BaseModel):
 
 
 @router.post("/send-email")
-async def send_candidate_email(payload: SendEmailRequest) -> dict:
+async def send_candidate_email(payload: SendEmailRequest, user: CurrentUser = Depends(get_current_user)) -> dict:
     if not _EMAIL_RE.match(payload.to_email):
         raise HTTPException(status_code=400, detail="Invalid recipient email address.")
     if not payload.subject.strip() or not payload.body.strip():
         raise HTTPException(status_code=400, detail="Subject and body are required.")
+
+    db = get_db_session()
+    try:
+        allowed = crud.candidate_email_belongs_to_recruiter(db, user.id, payload.to_email)
+    finally:
+        db.close()
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Recipient is not a candidate in one of your projects.")
 
     try:
         send_email(payload.to_email, payload.subject, payload.body)

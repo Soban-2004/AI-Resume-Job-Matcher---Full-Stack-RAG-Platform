@@ -161,3 +161,15 @@ def list_project_candidates(db: Session, project_id: str) -> list[ProjectCandida
             .order_by(ProjectCandidate.overall_fit_score.desc())
         )
     )
+
+
+def candidate_email_belongs_to_recruiter(db: Session, recruiter_id: str, email: str) -> bool:
+    """Used to stop /send-email being an open relay to arbitrary addresses --
+    a recruiter can only email someone who's actually a candidate in one of
+    their own projects."""
+    match = db.scalar(
+        select(ProjectCandidate.id)
+        .join(RecruitmentProject, ProjectCandidate.project_id == RecruitmentProject.id)
+        .where(RecruitmentProject.recruiter_id == recruiter_id, ProjectCandidate.candidate_email == email)
+    )
+    return match is not None
