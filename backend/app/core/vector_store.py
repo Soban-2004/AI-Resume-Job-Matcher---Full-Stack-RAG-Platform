@@ -8,8 +8,12 @@ from qdrant_client.http import models as qmodels
 from app.config import settings
 from app.core.embeddings import embed_texts
 
-COLLECTION_NAME = "resume_chunks"
-VECTOR_SIZE = 768  # Alibaba-NLP/gte-base-en-v1.5 dense embedding dimension
+# Renamed from "resume_chunks" -- that collection holds 768-dim vectors from
+# the retired local gte-base-en-v1.5 model; Cohere embed-v4.0 outputs 1536-dim
+# vectors, and Qdrant enforces a fixed size per collection, so reusing the old
+# name would 400 on the first upsert instead of just creating a fresh one.
+COLLECTION_NAME = "resume_chunks_cohere_v4"
+VECTOR_SIZE = 1536  # Cohere embed-v4.0 dense embedding dimension
 
 # Recruiter batches call upsert_chunks (and therefore ensure_collection) from
 # several concurrent candidate threads. Without this, multiple threads can

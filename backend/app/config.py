@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     qdrant_url: str
     qdrant_api_key: str
     gemini_api_key: str = ""
+    cohere_api_key: str = ""
 
     # llama-3.3-70b-versatile hit its 100k/day free-tier token quota during
     # testing. Groq's quotas are per-model, so llama-3.1-8b-instant gives us
@@ -47,8 +48,11 @@ class Settings(BaseSettings):
     rubric_gemini_model: str = "gemini-3.1-flash-lite"
     rubric_check_fallback_model: str = "llama-3.1-8b-instant"
 
-    embedding_model: str = "Alibaba-NLP/gte-base-en-v1.5"
-    reranker_model: str = "cross-encoder/ms-marco-electra-base"
+    # Moved off local sentence-transformers/CrossEncoder (torch import + model
+    # deserialization was the dominant chunk of cold-start time on a free-tier
+    # host) to Cohere's hosted embed/rerank endpoints -- no local model to load.
+    embedding_model: str = "embed-v4.0"
+    reranker_model: str = "rerank-v3.5"
 
     # Groq's free tier caps llama-3.3-70b-versatile at 12,000 TPM. Running
     # candidates concurrently means several large rubric-scoring prompts

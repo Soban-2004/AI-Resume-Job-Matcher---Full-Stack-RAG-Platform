@@ -1,0 +1,32 @@
+name: Keep backend and Supabase alive
+
+# Render's free tier sleeps the backend after ~15 min idle, and Supabase
+# auto-pauses a free-tier project after ~7 days with no DB activity. Pinging
+# both every 10 minutes keeps each one under its respective idle threshold so
+# a demo visitor never hits a cold-started backend or a paused DB.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /health
+        # TODO: confirm this matches the actual URL Render assigns on deploy
+        # (derived from the "job-resume-matcher-backend" service name in
+        # render.yaml -- Render appends a suffix instead if that name is
+        # already taken globally).
+        run: curl -fsS "https://job-resume-matcher-backend.onrender.com/health"
+
+      - name: Ping Supabase to reset its idle timer
+        # SUPABASE_URL/anon key are safe to inline here -- both already ship
+        # client-side in the frontend bundle (NEXT_PUBLIC_*), same as any
+        # public API key. Hits an actual table (not the /rest/v1/ schema
+        # root, which 401s for anon keys -- only service_role can introspect
+        # it) so the request genuinely reaches Postgres and counts as
+        # activity against Supabase's auto-pause timer.
+        run: |
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5bWNrYndvdmVsYWhlaGp3YXJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0Nzc3MzUsImV4cCI6MjEwMDA1MzczNX0.-VqQ_TBq2YjWUPQbcSp5W74spByEFLQsU-1XXr4lgcI"
+          curl -fsS -H "apikey: $KEY" -H "Authorization: Bearer $KEY" "https://aymckbwovelahehjware.supabase.co/rest/v1/resumes?select=id&limit=1"

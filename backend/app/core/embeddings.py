@@ -1,28 +1,41 @@
-from functools import lru_cache
-
 import numpy as np
-from sentence_transformers import SentenceTransformer
+import requests
 
 from app.config import settings
-from app.core.gpu_lock import run_on_gpu_thread
+
+_EMBED_URL = "https://api.cohere.com/v2/embed"
+_EMBED_BATCH_SIZE = 96  # Cohere's per-request text limit
 
 
-@lru_cache
-def get_embedding_model() -> SentenceTransformer:
-    # gte-base-en-v1.5 still supports 8192 tokens despite its small size
-    # (unlike all-MiniLM-L6-v2's 256-token cap, which silently truncated
-    # full resume/JD text). It uses custom modeling code from its HF repo,
-    # hence trust_remote_code -- a well-known, widely used model.
-    return SentenceTransformer(settings.embedding_model, trust_remote_code=True)
+def embed_texts(texts: list[str], input_type: str = "search_document") -> np.ndarray:
+    """Returns L2-normalized embeddings, so a dot product equals cosine similarity.
 
-
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """Returns L2-normalized embeddings, so a dot product equals cosine similarity."""
+    `input_type` should be "search_query" for text used to retrieve against
+    stored chunks, and left at the "search_document" default for text being
+    stored or compared symmetrically -- Cohere's embed model uses this to
+    optimize the embedding for its role.
+    """
     if not texts:
         return np.empty((0, 0))
 
-    def _encode() -> np.ndarray:
-        model = get_embedding_model()
-        return np.asarray(model.encode(texts, normalize_embeddings=True, show_progress_bar=False))
+    vectors: list[list[float]] = []
+    for i in range(0, len(texts), _EMBED_BATCH_SIZE):
+        batch = texts[i : i + _EMBED_BATCH_SIZE]
+        response = requests.post(
+            _EMBED_URL,
+            headers={"Authorization": f"Bearer {settings.cohere_api_key}", "Content-Type": "application/json"},
+            json={
+                "model": settings.embedding_model,
+                "texts": batch,
+                "input_type": input_type,
+                "embedding_types": ["float"],
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        vectors.extend(response.json()["embeddings"]["float"])
 
-    return run_on_gpu_thread(_encode)
+    array = np.asarray(vectors)
+    norms = np.linalg.norm(array, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return array / norms

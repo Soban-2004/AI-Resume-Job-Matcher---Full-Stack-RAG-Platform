@@ -84,7 +84,7 @@ def estimate_provisional_score(
 
     vectors = np.array([c["vector"] for c in chunks])
     requirements = list(jd_skill_weights.keys())
-    query_vectors = embed_texts(requirements)
+    query_vectors = embed_texts(requirements, input_type="search_query")
 
     total_weight = sum(jd_skill_weights.values())
     if total_weight == 0:
@@ -172,7 +172,7 @@ def retrieve_evidence(
     texts = [c["text"] for c in chunks]
     vectors = np.array([c["vector"] for c in chunks])
     bm25 = BM25Okapi([_tokenize(t) for t in texts])
-    query_vectors = embed_texts(requirements)
+    query_vectors = embed_texts(requirements, input_type="search_query")
 
     evidence_map: dict[str, list[str]] = {}
     for i, requirement in enumerate(requirements):

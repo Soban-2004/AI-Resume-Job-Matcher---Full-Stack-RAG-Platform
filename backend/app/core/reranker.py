@@ -1,14 +1,8 @@
-from functools import lru_cache
-
-from sentence_transformers import CrossEncoder
+import requests
 
 from app.config import settings
-from app.core.gpu_lock import run_on_gpu_thread
 
-
-@lru_cache
-def get_reranker() -> CrossEncoder:
-    return CrossEncoder(settings.reranker_model)
+_RERANK_URL = "https://api.cohere.com/v2/rerank"
 
 
 def rerank(query: str, candidates: list[str]) -> list[float]:
@@ -16,9 +10,22 @@ def rerank(query: str, candidates: list[str]) -> list[float]:
     if not candidates:
         return []
 
-    def _predict() -> list[float]:
-        model = get_reranker()
-        pairs = [(query, candidate) for candidate in candidates]
-        return [float(s) for s in model.predict(pairs)]
+    response = requests.post(
+        _RERANK_URL,
+        headers={"Authorization": f"Bearer {settings.cohere_api_key}", "Content-Type": "application/json"},
+        json={
+            "model": settings.reranker_model,
+            "query": query,
+            "documents": candidates,
+            "top_n": len(candidates),
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
 
-    return run_on_gpu_thread(_predict)
+    # Cohere returns results sorted by relevance with the original index, not
+    # in input order -- restore input order so callers can zip scores 1:1.
+    scores = [0.0] * len(candidates)
+    for result in response.json()["results"]:
+        scores[result["index"]] = result["relevance_score"]
+    return scores
