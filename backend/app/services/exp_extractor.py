@@ -2,6 +2,13 @@ import re
 from datetime import date
 
 
+_MAX_PLAUSIBLE_YEARS = 50  # a full career span -- anything beyond this from a
+# single match is almost certainly a parsing artifact (a spurious date-range
+# match, garbled PDF text, an unrelated number), not real experience. Also
+# used as a final clamp on the total, since several individually-plausible
+# matches (e.g. one row per project/job) can still sum past a real career.
+
+
 def extract_experience(text: str) -> int:
     if not isinstance(text, str):
         return 0
@@ -93,7 +100,8 @@ def extract_experience(text: str) -> int:
 
             if end_year >= start_year:
                 years_diff = end_year - start_year
-                date_range_total += years_diff
+                if years_diff <= _MAX_PLAUSIBLE_YEARS:  # discard a single implausible match as noise
+                    date_range_total += years_diff
         except (ValueError, IndexError):
             continue
 
@@ -104,4 +112,5 @@ def extract_experience(text: str) -> int:
     # present; the explicit "X years" phrasing is only a fallback for resumes
     # with no parseable date ranges at all.
     total_experience = date_range_total if date_range_total > 0 else explicit_total
+    total_experience = min(total_experience, _MAX_PLAUSIBLE_YEARS)
     return total_experience if total_experience > 0 else 0
