@@ -8,7 +8,8 @@ _RERANK_URL = "https://api.cohere.com/v2/rerank"
 
 
 class RerankUnavailable(Exception):
-    """Raised when Cohere's rerank endpoint is still rate-limited after a retry."""
+    """Raised when Cohere's rerank endpoint is still unreachable, timing out,
+    or rate-limited after a retry."""
 
 
 def _post_rerank(query: str, candidates: list[str]) -> requests.Response:
@@ -39,18 +40,26 @@ def rerank(query: str, candidates: list[str]) -> list[float]:
 
     Cohere's trial rerank quota (10 req/min) is easy to hit here --
     retrieve_evidence calls this once per JD requirement, so a single resume
-    with a 15-20 requirement JD can burn through it on its own. Retries once
-    after a short wait to absorb a brief burst; if still rate-limited, raises
+    with a 15-20 requirement JD can burn through it on its own. A transient
+    timeout/connection error gets the same one-retry treatment as a 429 --
+    both absorb a brief blip; if still failing after the retry, raises
     RerankUnavailable so the caller can fall back to a rerank-free ranking
     instead of failing the whole analysis.
     """
     if not candidates:
         return []
 
-    response = _post_rerank(query, candidates)
-    if response.status_code == 429:
-        time.sleep(6)  # a slice of the 60s window -- enough to clear a brief burst
+    try:
         response = _post_rerank(query, candidates)
+    except requests.exceptions.RequestException:
+        response = None
+
+    if response is None or response.status_code == 429:
+        time.sleep(6)  # a slice of the 60s window -- enough to clear a brief burst
+        try:
+            response = _post_rerank(query, candidates)
+        except requests.exceptions.RequestException as e:
+            raise RerankUnavailable("Cohere rerank unreachable after retry") from e
         if response.status_code == 429:
             raise RerankUnavailable("Cohere rerank rate-limited after retry")
 
