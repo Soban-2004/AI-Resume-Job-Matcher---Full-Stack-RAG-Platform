@@ -316,11 +316,40 @@ export default function JobSeekerPage() {
       {(status?.state === "completed" || status?.state === "stopped") && result && !result.eligibility.eligible && (
         <Alert variant="destructive">
           <AlertTitle>Not eligible for this role</AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="flex flex-col gap-2">
+            <p>
+              Oops — this one&apos;s not quite a match yet. That&apos;s okay, it just means this specific
+              posting may not be the best fit right now:
+            </p>
             <ul className="list-disc pl-4">
-              {result.eligibility.reasons.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
+              {result.eligibility.reasons.map((r) => {
+                const lower = r.toLowerCase();
+                if (lower.includes("experience")) {
+                  return (
+                    <li key={r}>
+                      This role asks for{" "}
+                      <span className="font-medium tabular-nums">{result.jd_experience_years}+</span> years of
+                      experience — we found{" "}
+                      <span className="font-medium tabular-nums">{result.resume_experience_years}</span> on your
+                      resume.
+                    </li>
+                  );
+                }
+                if (lower.includes("degree")) {
+                  return (
+                    <li key={r}>
+                      This role requires at least a{" "}
+                      <span className="font-medium capitalize">{result.jd_degree.highest ?? "listed"}</span>{" "}
+                      degree — your resume shows{" "}
+                      <span className="font-medium capitalize">
+                        {result.resume_degree.highest ?? "no degree detected"}
+                      </span>
+                      .
+                    </li>
+                  );
+                }
+                return <li key={r}>{r}</li>;
+              })}
             </ul>
           </AlertDescription>
         </Alert>

@@ -62,7 +62,12 @@ def extract_experience(text: str) -> int:
             exp_val = int(match.group(1).replace('+', ''))
             explicit_total += exp_val
         elif match.group(2) and match.group(3):
-            exp_val = int(match.group(3))
+            # "X-Y years" (e.g. a JD's "0-2 Years") -- use the lower bound,
+            # the actual minimum, not the upper bound. Taking the upper bound
+            # made a JD's "0-2 Years" (entry-level, 0 is acceptable) extract
+            # as a 2-year minimum, wrongly marking 0-1 year candidates
+            # ineligible for roles they actually qualify for.
+            exp_val = int(match.group(2))
             explicit_total += exp_val
         elif match.group(4):
             exp_val = int(match.group(4))
