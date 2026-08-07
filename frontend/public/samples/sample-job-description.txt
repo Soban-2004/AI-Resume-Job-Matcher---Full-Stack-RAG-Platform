@@ -1,0 +1,59 @@
+AI Engineer
+
+Location: Bengaluru, India (Hybrid)
+
+Experience: 0-2 Years
+
+About the Role
+
+We are looking for an AI Engineer to design, develop, and deploy AI-powered applications using Large Language Models (LLMs), Retrieval-Augmented Generation (RAG), and modern machine learning frameworks. You will work with software engineers and product teams to build scalable AI solutions for enterprise customers.
+
+Responsibilities
+Build and deploy AI applications using Python.
+Develop Retrieval-Augmented Generation (RAG) pipelines.
+Design and implement AI agents and multi-agent workflows.
+Integrate Large Language Models (OpenAI, Anthropic, Gemini, Llama).
+Develop REST APIs using FastAPI.
+Work with vector databases such as Pinecone, Qdrant, Weaviate, or Milvus.
+Optimize prompts and evaluate LLM performance.
+Build data ingestion and document processing pipelines.
+Deploy applications using Docker and Kubernetes.
+Work with cloud platforms such as AWS, Azure, or Google Cloud.
+Monitor AI applications and troubleshoot production issues.
+Collaborate with cross-functional teams using Agile methodologies.
+Write clean, maintainable, and well-tested code.
+
+Required Skills
+Bachelor's degree in Computer Science or related field.
+Strong programming skills in Python.
+Experience with FastAPI or Flask.
+Knowledge of Generative AI and Large Language Models.
+Experience with LangChain, LangGraph, LlamaIndex, or similar frameworks.
+Understanding of Retrieval-Augmented Generation (RAG).
+Familiarity with vector databases.
+Experience with Git and GitHub.
+Knowledge of SQL and databases.
+Experience with Docker.
+Good problem-solving and communication skills.
+
+Preferred Skills
+Experience with Kubernetes.
+Knowledge of Redis.
+Experience with Azure OpenAI, AWS Bedrock, or Vertex AI.
+Familiarity with Hugging Face Transformers.
+Experience with MLflow, Langfuse, or similar observability tools.
+Knowledge of CI/CD pipelines.
+Experience with Linux.
+Understanding of prompt engineering and AI evaluation techniques.
+
+Nice to Have
+Experience building end-to-end AI applications.
+Open-source contributions.
+Personal AI projects or hackathon experience.
+Knowledge of agentic AI frameworks and MCP (Model Context Protocol).
+
+Technologies
+Python, FastAPI, LangChain, LangGraph, LlamaIndex, OpenAI API, Anthropic Claude, Gemini,
+Docker, Kubernetes, Redis, PostgreSQL, SQL, Git, GitHub, Azure, AWS,
+Vector Databases (Qdrant, Pinecone, Weaviate, Milvus), REST APIs, Prompt Engineering, RAG,
+Multi-Agent Systems, CI/CD, Linux

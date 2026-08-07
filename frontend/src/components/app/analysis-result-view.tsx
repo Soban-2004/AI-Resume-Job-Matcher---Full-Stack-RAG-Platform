@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScoreRing } from "@/components/app/score-ring";
+import { RequirementBarChart } from "@/components/app/requirement-bar-chart";
 import { RequirementVerdictList } from "@/components/app/requirement-verdict-card";
 import { OptimizedResumeView } from "@/components/app/optimized-resume-view";
 import { CATEGORY_THEME } from "@/lib/category-theme";
@@ -54,7 +55,7 @@ export function AnalysisResultView({ result }: { result: JobSeekerAnalysisRespon
           <ScoreRing label="Overall Fit" score={result.overall_fit_score} />
           <ScoreRing label="Skill-Based ATS Score" score={result.skill_based_ats_score} />
         </Card>
-        <Card className={cn("flex flex-col gap-3 p-6", CATEGORY_THEME.overview.card)}>
+        <Card className={cn("flex flex-col gap-4 p-6", CATEGORY_THEME.overview.card)}>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-muted-foreground">At a glance</h2>
             <div className="flex gap-2">
@@ -66,7 +67,8 @@ export function AnalysisResultView({ result }: { result: JobSeekerAnalysisRespon
               </Badge>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">
+          <RequirementBarChart verdicts={result.requirement_verdicts} />
+          <p className="text-xs text-muted-foreground">
             See the Requirement Breakdown tab for the evidence behind every match, the Cover Letter
             tab for a tailored draft, and Optimized Resume for a polished, downloadable version.
           </p>

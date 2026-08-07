@@ -158,6 +158,18 @@ async def get_report(report_id: str, user: CurrentUser = Depends(get_current_use
         db.close()
 
 
+@router.delete("/reports/{report_id}")
+async def delete_report(report_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    db = get_db_session()
+    try:
+        deleted = crud.delete_analysis_report(db, user.id, report_id)
+    finally:
+        db.close()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return {"status": "deleted"}
+
+
 @router.post("/optimized-resume/pdf")
 async def render_optimized_resume_pdf(resume: OptimizedResume) -> Response:
     """Stateless by design -- the client already has the full optimized-resume

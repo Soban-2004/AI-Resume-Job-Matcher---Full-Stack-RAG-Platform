@@ -1,0 +1,41 @@
+Maya Chen
+Bengaluru, India
+maya.chen.dev@example.com | github.com/example | linkedin.com/in/example
+
+PROFESSIONAL SUMMARY
+Recent Computer Science graduate with hands-on experience building AI-powered applications
+using Large Language Models and Retrieval-Augmented Generation. Comfortable across the full
+stack, from a FastAPI backend to a Python-based RAG pipeline.
+
+EXPERIENCE
+
+AI Engineering Intern | NimbusWorks | Bengaluru, India | Jun 2025 - Dec 2025
+- Built a Retrieval-Augmented Generation pipeline over internal support documentation using
+  LangChain and Qdrant, cutting average ticket resolution time by roughly 30%.
+- Developed REST APIs with FastAPI to serve LLM-backed features to the product team.
+- Integrated the OpenAI API and later added Gemini as a fallback provider for resilience
+  against rate limits.
+- Wrote unit and integration tests, and used Git/GitHub for version control and code review.
+
+Software Engineering Intern | Solstice Labs | Remote | Jan 2025 - May 2025
+- Contributed to a Python/PostgreSQL backend service, writing and optimizing SQL queries.
+- Containerized a small internal tool with Docker for consistent local development.
+- Collaborated with a cross-functional team using Agile sprints and stand-ups.
+
+PROJECTS
+
+Personal RAG Chatbot (2024)
+- Built an end-to-end question-answering chatbot over a personal document collection using
+  LlamaIndex, a vector database, and prompt engineering to reduce hallucinated answers.
+- Deployed as a small FastAPI service with a simple web frontend.
+
+EDUCATION
+B.Sc. Computer Science, Bengaluru Institute of Technology (2021-2025)
+
+TECHNICAL SKILLS
+Programming: Python, SQL
+Frameworks: FastAPI, LangChain, LlamaIndex
+AI/ML: Large Language Models, Retrieval-Augmented Generation (RAG), Prompt Engineering,
+  OpenAI API, Gemini
+Databases & Infra: PostgreSQL, Qdrant (vector database), Docker, Git, GitHub
+Other: REST APIs, Agile/Scrum

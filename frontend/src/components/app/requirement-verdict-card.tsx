@@ -30,7 +30,9 @@ export function VerdictAccordionItem({
           ) : (
             <XCircle className="size-4 shrink-0 text-red-500/70" />
           )}
-          <span className="text-left text-sm font-medium capitalize text-foreground">{v.requirement}</span>
+          <span className="min-w-0 flex-1 truncate text-left text-sm font-medium capitalize text-foreground">
+            {v.requirement}
+          </span>
           <Badge variant="secondary" className="ml-auto shrink-0 text-xs font-normal">
             weight {v.weight.toFixed(1)}
           </Badge>

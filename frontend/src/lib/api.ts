@@ -79,6 +79,14 @@ export async function getReport(reportId: string): Promise<JobSeekerAnalysisResp
   return res.json();
 }
 
+export async function deleteReport(reportId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/reports/${reportId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+}
+
 export async function downloadOptimizedResumePdf(resume: OptimizedResume): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/api/job-seeker/optimized-resume/pdf`, {
     method: "POST",

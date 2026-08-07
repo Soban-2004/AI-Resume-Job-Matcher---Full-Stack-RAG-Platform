@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, Compass, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowLeft, Compass, RotateCcw, Sparkles, Square, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,7 @@ export default function JobSeekerPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [loadingSample, setLoadingSample] = useState(false);
 
   const { status, pollError } = useJobPolling(jobId, getJobSeekerJob);
 
@@ -61,6 +62,24 @@ export default function JobSeekerPage() {
       setSubmitError(err instanceof Error ? err.message : "Failed to start analysis");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleUseSample() {
+    setSubmitError(null);
+    setLoadingSample(true);
+    try {
+      const [resumeBlob, jdBlob] = await Promise.all([
+        fetch("/samples/sample-resume.txt").then((r) => r.blob()),
+        fetch("/samples/sample-job-description.txt").then((r) => r.blob()),
+      ]);
+      setResume(new File([resumeBlob], "sample-resume.txt", { type: "text/plain" }));
+      setJobDescription(new File([jdBlob], "sample-job-description.txt", { type: "text/plain" }));
+      setJobRole("AI Engineer");
+    } catch {
+      setSubmitError("Couldn't load the sample files. Please try again or upload your own.");
+    } finally {
+      setLoadingSample(false);
     }
   }
 
@@ -190,6 +209,21 @@ export default function JobSeekerPage() {
             transition={{ type: "spring", stiffness: 280, damping: 30 }}
           >
             <Card className="flex flex-col gap-6 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
+                <p className="text-xs text-muted-foreground">
+                  Don&apos;t have files handy? Try a sample resume and AI Engineer job description.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleUseSample}
+                  disabled={loadingSample}
+                >
+                  <Wand2 className="size-3.5" />
+                  {loadingSample ? "Loading sample..." : "Use a sample"}
+                </Button>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FileDropzone
                   label="Resume"

@@ -15,6 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { FunnelViz } from "@/components/app/funnel-viz";
 import { MultiFileDropzone } from "@/components/app/multi-file-dropzone";
 import { CandidateProgressList } from "@/components/app/candidate-progress";
 import { CandidateCard } from "@/components/app/candidate-card";
@@ -174,6 +175,13 @@ export default function ProjectWorkspacePage() {
         />
       ) : (
         <>
+          {project.candidates.length > 0 && (
+            <Card className="flex flex-col gap-4 p-6">
+              <h2 className="text-sm font-medium text-muted-foreground">Candidate Funnel</h2>
+              <FunnelViz candidates={project.candidates} />
+            </Card>
+          )}
+
           {!jobId && !adding && (
             <Button size="lg" className={cn("w-fit gap-2", GRADIENT_CTA)} onClick={() => setAdding(true)}>
               <Plus className="size-4" />

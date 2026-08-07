@@ -69,6 +69,18 @@ def get_analysis_report(db: Session, user_id: str, report_id: str) -> AnalysisRe
     )
 
 
+def delete_analysis_report(db: Session, user_id: str, report_id: str) -> bool:
+    """Scoped to user_id so one user can never delete another's report by
+    guessing an ID. Only removes the report row -- the underlying resume
+    (shared across a user's whole library) is untouched."""
+    report = get_analysis_report(db, user_id, report_id)
+    if not report:
+        return False
+    db.delete(report)
+    db.commit()
+    return True
+
+
 def create_project(
     db: Session,
     recruiter_id: str,

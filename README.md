@@ -12,7 +12,7 @@ A full-stack, dual-mode recruitment platform that goes far beyond keyword matchi
 
 This isn't a single Streamlit script — it's a real client/server application: a **Next.js 16** frontend, a **FastAPI** backend, **Supabase** for auth and relational persistence, and **Qdrant** for vector search, with a resilient multi-provider LLM fallback chain so it keeps working even when a free-tier quota runs out mid-session.
 
-**🔗 Live demo: [ai-resume-job-matcher-rag-platform.vercel.app](https://ai-resume-job-matcher-rag-platform.vercel.app/)**
+**🔗 Live demo: [ai-resume-job-matcher-rag-platform.vercel.app](ai-resume-job-matcher-rag-platform-soban-2004s-projects.vercel.app)**
 
 ---
 
