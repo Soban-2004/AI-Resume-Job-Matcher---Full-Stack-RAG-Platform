@@ -15,8 +15,9 @@ from app.models.schemas import (
 )
 from app.services import job_store
 from app.services.document_loader import load_document
-from app.services.job_seeker_service import analyze_job_seeker
+from app.services.job_seeker_service import analyze_job_seeker, generate_cover_letter
 from app.services.job_store import StepState
+from app.services.resume_optimizer import optimize_and_verify
 from app.services.resume_pdf import render_resume_pdf
 
 router = APIRouter(prefix="/api/job-seeker", tags=["job-seeker"])
@@ -27,21 +28,20 @@ _STAGE_DEFS = [
     ("indexing", "Indexing resume"),
     ("retrieval", "Retrieving evidence"),
     ("scoring", "Scoring requirements"),
-    ("cover_letter", "Writing cover letter"),
-    ("improvements", "Suggesting improvements"),
 ]
 
 
 def _persist_report(
     user_id: str, resume_filename: str, resume_text: str, job_role: str, jd_text: str, result: JobSeekerAnalysisResponse
-) -> None:
+) -> str:
     # Runs after the response for this analysis job is already being polled
     # as "completed" -- a fresh, short-lived session here rather than a
     # request-scoped one, since background tasks outlive the request.
     db = get_db_session()
     try:
         resume = crud.save_resume(db, user_id, resume_filename, resume_text)
-        crud.save_analysis_report(db, user_id, resume.id, resume_filename, job_role, jd_text, result)
+        report = crud.save_analysis_report(db, user_id, resume.id, resume_filename, job_role, jd_text, result)
+        return report.id
     finally:
         db.close()
 
@@ -84,7 +84,8 @@ async def _run_job(
         else:
             job_store.set_result(job_id, result)
             if not job_store.is_stop_requested(job_id):
-                _persist_report(user_id, resume_filename, resume_text, job_role, jd_text, result)
+                report_id = _persist_report(user_id, resume_filename, resume_text, job_role, jd_text, result)
+                job_store.set_report_id(job_id, report_id)
     except Exception as e:
         job_store.set_activity(job_id, None)
         job_store.set_error(job_id, str(e))
@@ -158,6 +159,57 @@ async def get_report(report_id: str, user: CurrentUser = Depends(get_current_use
         db.close()
 
 
+def _load_report_and_resume(db, user_id: str, report_id: str):
+    report = crud.get_analysis_report(db, user_id, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    resume = crud.get_resume(db, user_id, report.resume_id) if report.resume_id else None
+    if not resume:
+        raise HTTPException(
+            status_code=409,
+            detail="The original resume for this report is no longer available.",
+        )
+    return report, resume
+
+
+@router.post("/reports/{report_id}/cover-letter", response_model=JobSeekerAnalysisResponse)
+async def generate_report_cover_letter(
+    report_id: str, user: CurrentUser = Depends(get_current_user)
+) -> JobSeekerAnalysisResponse:
+    """Generated on demand rather than as part of every analysis -- see
+    include_cover_letter in analyze_job_seeker. Re-generating overwrites any
+    previous cover letter on this report."""
+    enforce_job_creation_rate_limit(user.id)
+    db = get_db_session()
+    try:
+        report, resume = _load_report_and_resume(db, user.id, report_id)
+        result = JobSeekerAnalysisResponse.model_validate(report.result_json)
+        result.cover_letter = generate_cover_letter(resume.resume_text, report.job_desc_text)
+        updated = crud.update_analysis_report_result(db, user.id, report_id, result)
+        return JobSeekerAnalysisResponse.model_validate(updated.result_json)
+    finally:
+        db.close()
+
+
+@router.post("/reports/{report_id}/optimized-resume", response_model=JobSeekerAnalysisResponse)
+async def generate_report_optimized_resume(
+    report_id: str, user: CurrentUser = Depends(get_current_user)
+) -> JobSeekerAnalysisResponse:
+    """Generated on demand -- see include_optimized_resume in
+    analyze_job_seeker. Re-generating overwrites any previous rewrite on this
+    report."""
+    enforce_job_creation_rate_limit(user.id)
+    db = get_db_session()
+    try:
+        report, resume = _load_report_and_resume(db, user.id, report_id)
+        result = JobSeekerAnalysisResponse.model_validate(report.result_json)
+        result.optimized_resume = optimize_and_verify(resume.resume_text, report.job_desc_text)
+        updated = crud.update_analysis_report_result(db, user.id, report_id, result)
+        return JobSeekerAnalysisResponse.model_validate(updated.result_json)
+    finally:
+        db.close()
+
+
 @router.delete("/reports/{report_id}")
 async def delete_report(report_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
     db = get_db_session()
@@ -218,4 +270,5 @@ async def get_job(job_id: str) -> JobStatusResponse:
         current_activity=job.current_activity,
         result=job.result,
         error=job.error,
+        report_id=job.report_id,
     )

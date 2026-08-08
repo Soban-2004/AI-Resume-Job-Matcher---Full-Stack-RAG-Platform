@@ -87,6 +87,24 @@ export async function deleteReport(reportId: string): Promise<void> {
   if (!res.ok) throw new Error(await parseErrorDetail(res));
 }
 
+export async function generateCoverLetter(reportId: string): Promise<JobSeekerAnalysisResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/reports/${reportId}/cover-letter`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function generateOptimizedResume(reportId: string): Promise<JobSeekerAnalysisResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/reports/${reportId}/optimized-resume`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  return res.json();
+}
+
 export async function downloadOptimizedResumePdf(resume: OptimizedResume): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/api/job-seeker/optimized-resume/pdf`, {
     method: "POST",

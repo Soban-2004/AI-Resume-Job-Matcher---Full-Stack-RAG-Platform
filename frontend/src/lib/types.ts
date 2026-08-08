@@ -171,4 +171,5 @@ export interface JobStatusResponse {
   pending_approval: RoundSummary | null;
   result: JobSeekerAnalysisResponse | RecruiterAnalysisResponse | null;
   error: string | null;
+  report_id: string | null;
 }

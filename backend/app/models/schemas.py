@@ -227,3 +227,4 @@ class JobStatusResponse(BaseModel):
     pending_approval: RoundSummary | None = None
     result: JobSeekerAnalysisResponse | RecruiterAnalysisResponse | None = None
     error: str | None = None
+    report_id: str | None = None

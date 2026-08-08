@@ -30,6 +30,10 @@ def list_resumes(db: Session, user_id: str) -> list[Resume]:
     )
 
 
+def get_resume(db: Session, user_id: str, resume_id: str) -> Resume | None:
+    return db.scalar(select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id))
+
+
 def save_analysis_report(
     db: Session,
     user_id: str,
@@ -67,6 +71,22 @@ def get_analysis_report(db: Session, user_id: str, report_id: str) -> AnalysisRe
     return db.scalar(
         select(AnalysisReport).where(AnalysisReport.id == report_id, AnalysisReport.user_id == user_id)
     )
+
+
+def update_analysis_report_result(
+    db: Session, user_id: str, report_id: str, result: JobSeekerAnalysisResponse
+) -> AnalysisReport | None:
+    """Used by the on-demand cover-letter/optimized-resume endpoints -- the
+    caller mutates just that one field on the already-loaded result and
+    passes the whole object back in, so this stays a plain overwrite rather
+    than needing per-field update logic here."""
+    report = get_analysis_report(db, user_id, report_id)
+    if not report:
+        return None
+    report.result_json = result.model_dump(mode="json")
+    db.commit()
+    db.refresh(report)
+    return report
 
 
 def delete_analysis_report(db: Session, user_id: str, report_id: str) -> bool:

@@ -27,6 +27,16 @@ Job Description: {job_desc_text}
 """
 
 
+def generate_cover_letter(resume_text: str, job_desc_text: str) -> str:
+    """Standalone so the on-demand /reports/{id}/cover-letter endpoint can
+    call the exact same generation logic used inline during a full analysis
+    (when explicitly requested via include_cover_letter=True)."""
+    return call_llm(
+        system="You are an expert career writing assistant.",
+        user=_COVER_LETTER_PROMPT.format(resume_text=resume_text, job_desc_text=job_desc_text),
+    )
+
+
 def _check_eligibility(resume_degree: dict, jd_degree: dict, resume_exp: int, jd_exp: int) -> EligibilityResult:
     reasons = []
     if jd_degree["highest"] and resume_degree["highest"]:
@@ -46,6 +56,8 @@ def analyze_job_seeker(
     on_activity: Callable[[str], None] | None = None,
     on_verdict: Callable[[RequirementVerdict], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    include_cover_letter: bool = False,
+    include_optimized_resume: bool = False,
 ) -> JobSeekerAnalysisResponse:
     set_current_logger(job_seeker_logger)
     job_seeker_logger.info("=== analyze_job_seeker START job_role=%r ===", job_role)
@@ -129,24 +141,28 @@ def analyze_job_seeker(
     matched_requirements = [v.requirement for v in rubric.verdicts if v.satisfied]
     missing_requirements = [v.requirement for v in rubric.verdicts if not v.satisfied]
 
-    # Cover letter and improvements are separate Groq calls after rubric
-    # scoring -- if stop was requested mid-rubric, skip them too rather than
-    # starting fresh work after the user already asked to stop.
+    # Cover letter and the optimized-resume rewrite are separate, optional
+    # Groq calls after rubric scoring -- both default to skipped (see
+    # include_cover_letter/include_optimized_resume) so a plain analysis run
+    # doesn't pay for LLM calls the user hasn't asked for; the frontend
+    # generates each on demand via /reports/{id}/cover-letter and
+    # /reports/{id}/optimized-resume once the user actually clicks for one.
+    # If stop was requested mid-rubric, skip them too rather than starting
+    # fresh work after the user already asked to stop.
     cover_letter = None
     optimized_resume = None
     if not (should_stop and should_stop()):
-        notify("cover_letter", "running")
-        cover_letter = call_llm(
-            system="You are an expert career writing assistant.",
-            user=_COVER_LETTER_PROMPT.format(resume_text=resume_text, job_desc_text=job_desc_text),
-        )
-        publish(cover_letter=cover_letter)
-        notify("cover_letter", "done")
+        if include_cover_letter:
+            notify("cover_letter", "running")
+            cover_letter = generate_cover_letter(resume_text, job_desc_text)
+            publish(cover_letter=cover_letter)
+            notify("cover_letter", "done")
 
-        notify("improvements", "running")
-        optimized_resume = optimize_and_verify(resume_text, job_desc_text)
-        publish(optimized_resume=optimized_resume)
-        notify("improvements", "done")
+        if include_optimized_resume:
+            notify("improvements", "running")
+            optimized_resume = optimize_and_verify(resume_text, job_desc_text)
+            publish(optimized_resume=optimized_resume)
+            notify("improvements", "done")
 
     job_seeker_logger.info(
         "=== analyze_job_seeker END overall_fit_score=%.1f skill_based_ats_score=%.1f matched=%d missing=%d ===",

@@ -36,7 +36,13 @@ type View = "dashboard" | "form" | "report";
 export default function JobSeekerPage() {
   const [view, setView] = useState<View>("dashboard");
   const [viewedReport, setViewedReport] = useState<JobSeekerAnalysisResponse | null>(null);
+  const [viewedReportId, setViewedReportId] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  // Overrides status.result once the user generates a cover letter/optimized
+  // resume on demand -- status is owned by useJobPolling and stops updating
+  // once the job completes, so this is the only place a post-completion edit
+  // can live.
+  const [resultOverride, setResultOverride] = useState<JobSeekerAnalysisResponse | null>(null);
 
   const [resume, setResume] = useState<File | null>(null);
   const [jobDescription, setJobDescription] = useState<File | null>(null);
@@ -55,6 +61,7 @@ export default function JobSeekerPage() {
     if (!resume || !jobDescription) return;
     setSubmitError(null);
     setSubmitting(true);
+    setResultOverride(null);
     try {
       const id = await createJobSeekerJob(resume, jobDescription, jobRole.trim());
       setJobId(id);
@@ -86,6 +93,7 @@ export default function JobSeekerPage() {
   async function handleViewReport(reportId: string) {
     setReportError(null);
     setViewedReport(null);
+    setViewedReportId(reportId);
     setView("report");
     try {
       const report = await getReport(reportId);
@@ -112,10 +120,12 @@ export default function JobSeekerPage() {
     setJobRole("");
     setSubmitError(null);
     setViewedReport(null);
+    setViewedReportId(null);
+    setResultOverride(null);
     setView("dashboard");
   }
 
-  const result = status?.result as JobSeekerAnalysisResponse | null;
+  const result = (resultOverride ?? status?.result) as JobSeekerAnalysisResponse | null;
   // `jobId &&` matters here: useJobPolling doesn't clear its last `status`
   // when jobId resets to null (e.g. "Start over"), so without this guard the
   // stale completed-job status would keep the results view rendered
@@ -196,7 +206,9 @@ export default function JobSeekerPage() {
                 <AlertDescription>{reportError}</AlertDescription>
               </Alert>
             )}
-            {viewedReport && <AnalysisResultView result={viewedReport} />}
+            {viewedReport && (
+              <AnalysisResultView result={viewedReport} reportId={viewedReportId} onResultChange={setViewedReport} />
+            )}
           </motion.div>
         )}
 
@@ -318,7 +330,11 @@ export default function JobSeekerPage() {
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             transition={{ type: "spring", stiffness: 260, damping: 28 }}
           >
-            <AnalysisResultView result={result} />
+            <AnalysisResultView
+              result={result}
+              reportId={status?.report_id ?? null}
+              onResultChange={setResultOverride}
+            />
           </motion.div>
         )}
       </AnimatePresence>

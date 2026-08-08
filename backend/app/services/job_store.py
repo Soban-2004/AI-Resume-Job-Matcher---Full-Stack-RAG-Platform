@@ -72,6 +72,12 @@ class Job:
     # candidates without threading project_id through PipelineState/
     # recruiter_service (which stay DB-agnostic).
     project_id: str | None = None
+    # Set once a job-seeker job's result has been persisted as an
+    # AnalysisReport row -- lets the frontend call the on-demand cover-letter/
+    # optimized-resume endpoints (scoped by report_id) right after a fresh
+    # analysis finishes, the same code path used for a revisited historical
+    # report.
+    report_id: str | None = None
 
 
 # In-memory only -- fine for a single-process personal project; jobs are
@@ -164,6 +170,13 @@ def set_result(job_id: str, result: Any) -> None:
             job.pending_approval = None
             job.pipeline_state = None
             job.next_round = None
+
+
+def set_report_id(job_id: str, report_id: str) -> None:
+    with _lock:
+        job = _jobs.get(job_id)
+        if job:
+            job.report_id = report_id
 
 
 def set_error(job_id: str, error: str) -> None:
