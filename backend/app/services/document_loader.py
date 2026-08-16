@@ -30,6 +30,20 @@ def _is_hidden_span(span: dict) -> bool:
     return False
 
 
+def _append_hyperlinks(text: str, links: list[str]) -> str:
+    # A resume's GitHub/portfolio/LinkedIn link is very often a clickable
+    # word or icon ("GitHub", a logo) rather than visible URL text -- plain
+    # text extraction never sees the underlying URL at all in that case,
+    # since it lives in a separate link-annotation structure, not the text
+    # content itself. Appending the real targets as plain text means
+    # url_extractor (and anything else reading resume_text) picks them up
+    # for free, with no change needed anywhere else in the pipeline.
+    deduped = list(dict.fromkeys(links))
+    if not deduped:
+        return text
+    return text + "\n\n[Linked URLs: " + ", ".join(deduped) + "]"
+
+
 def _extract_pdf_text(content: bytes) -> str:
     """Extracts visible text only -- filters out spans that are tiny or
     near-white-on-white, the two standard ways invisible keyword stuffing is
@@ -37,6 +51,7 @@ def _extract_pdf_text(content: bytes) -> str:
     human" and would extract stuffed content identically to real text.
     """
     pages_text: list[str] = []
+    hyperlinks: list[str] = []
     with fitz.open(stream=content, filetype="pdf") as doc:
         for page in doc:
             lines_text: list[str] = []
@@ -46,7 +61,17 @@ def _extract_pdf_text(content: bytes) -> str:
                     if visible_spans:
                         lines_text.append("".join(visible_spans))
             pages_text.append("\n".join(lines_text))
-    return "\n".join(pages_text)
+
+            # get_links() reads link *annotations* -- a completely separate
+            # structure from the text content stream above, which is why a
+            # hyperlinked word never surfaces its URL through get_text() at
+            # all, regardless of font size/color filtering.
+            for link in page.get_links():
+                uri = link.get("uri")
+                if uri:
+                    hyperlinks.append(uri)
+
+    return _append_hyperlinks("\n".join(pages_text), hyperlinks)
 
 
 def _extract_docx_text(content: bytes) -> str:
@@ -60,7 +85,15 @@ def _extract_docx_text(content: bytes) -> str:
             for cell in row.cells:
                 if cell.text:
                     parts.append(cell.text)
-    return "\n".join(parts)
+
+    # Hyperlink targets live in the part's relationships, not in any run's
+    # .text -- same gap as the PDF case, same fix.
+    hyperlink_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+    hyperlinks = [
+        rel.target_ref for rel in document.part.rels.values() if rel.reltype == hyperlink_rel_type and rel.is_external
+    ]
+
+    return _append_hyperlinks("\n".join(parts), hyperlinks)
 
 
 def load_document(filename: str, content: bytes) -> str | None:

@@ -8,11 +8,21 @@ export interface DegreeInfo {
   highest: string | null;
 }
 
+export type EvidenceType =
+  | "skills_only"
+  | "project_mention"
+  | "experience_mention"
+  | "demonstrated_usage"
+  | "external_verification"
+  | null;
+
 export interface RequirementVerdict {
   requirement: string;
   weight: number;
   satisfied: boolean;
+  evidence_type: EvidenceType;
   confidence: number;
+  external_source_url: string | null;
   justification: string;
   evidence: string[];
   suggested_certification: string | null;

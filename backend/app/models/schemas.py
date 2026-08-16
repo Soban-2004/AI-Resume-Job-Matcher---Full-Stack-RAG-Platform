@@ -1,4 +1,17 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
+
+EvidenceType = Literal[
+    "skills_only", "project_mention", "experience_mention", "demonstrated_usage", "external_verification"
+]
+
+UrlKind = Literal["github_profile", "github_repo", "linkedin", "kaggle", "portfolio"]
+
+
+class ExtractedUrl(BaseModel):
+    url: str
+    kind: UrlKind
 
 # =======================
 # LLM structured-output schemas (used as Groq tool-call parameters)
@@ -33,7 +46,29 @@ class RequirementVerdictCore(BaseModel):
     requirement: str = Field(description="The exact JD requirement/skill text this verdict is for")
     weight: float = Field(ge=0.0, le=1.0)
     satisfied: bool = Field(description="True only if the provided evidence actually demonstrates this")
-    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_type: EvidenceType | None = Field(
+        default=None,
+        description=(
+            "Only when satisfied=true -- how strongly the cited evidence demonstrates this "
+            "requirement. 'skills_only': the only evidence is a bare mention inside a "
+            "skills/technologies list, no sentence showing it being used. 'project_mention' / "
+            "'experience_mention': mentioned within a project or work-experience bullet, but "
+            "without a clear specific action or outcome tied to it. 'demonstrated_usage': "
+            "evidence shows the skill actively being used to build, do, or achieve something "
+            "concrete. Null when satisfied=false."
+        ),
+    )
+    # Deterministic, not LLM-supplied: computed from evidence_type via
+    # settings.evidence_type_weights right after the model's verdicts come
+    # back (see _evaluate_rubric_batch) -- not requested from the model, an
+    # LLM asked to self-report a calibrated 0-1 confidence isn't reliable at
+    # it (a bare skills-list mention scored a flat 1.0 in testing).
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Set only by the external-evidence corroboration step (see
+    # external_evidence.py), never by the resume-only rubric call -- the URL
+    # of the GitHub repo/profile that corroborated or satisfied this
+    # requirement, so the UI can cite exactly where it came from.
+    external_source_url: str | None = Field(default=None)
     justification: str
     evidence: list[str] = Field(
         default_factory=list,
@@ -51,6 +86,23 @@ class RequirementVerdictCore(BaseModel):
         if isinstance(v, str):
             return [v] if v else []
         return v
+
+
+class ExternalCorroborationVerdict(BaseModel):
+    requirement: str = Field(description="The exact requirement text this verdict is for")
+    corroborated: bool = Field(
+        description=(
+            "True only if the external evidence genuinely demonstrates real usage of this "
+            "requirement -- a passing/incidental mention (e.g. the word appears in a file listing "
+            "or an unrelated context) does NOT count. Same evidentiary bar as a resume claim."
+        )
+    )
+    evidence: str = Field(default="", description="Exact quoted snippet supporting this; empty if not corroborated")
+    justification: str = Field(default="")
+
+
+class ExternalCorroborationResult(BaseModel):
+    verdicts: list[ExternalCorroborationVerdict] = Field(default_factory=list)
 
 
 class RequirementVerdict(RequirementVerdictCore):

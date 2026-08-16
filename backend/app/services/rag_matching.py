@@ -17,11 +17,14 @@ from app.core.reranker import RerankUnavailable, rerank
 from app.core.vector_store import fetch_chunks, upsert_chunks
 from app.models.schemas import (
     CertificationSuggestionList,
+    ExternalCorroborationResult,
     RequirementVerdict,
     RubricResult,
     RubricResultCore,
 )
 from app.services.chunking import chunk_text
+from app.services.github_collector import ExternalEvidenceChunk, collect_github_evidence
+from app.services.url_extractor import extract_urls
 
 
 def _tokenize(text: str) -> list[str]:
@@ -245,8 +248,9 @@ def _requirement_section(requirement: str, weight: float, evidence_map: dict[str
 _PLAINTEXT_MODELS = {"qwen/qwen3.6-27b"}
 
 _VERDICT_FIELD_RE = re.compile(
-    r"^(requirement|satisfied|confidence|evidence|justification)\s*:\s*(.*)$", re.IGNORECASE
+    r"^(requirement|satisfied|evidence_type|evidence|justification)\s*:\s*(.*)$", re.IGNORECASE
 )
+_VALID_EVIDENCE_TYPES = {"skills_only", "project_mention", "experience_mention", "demonstrated_usage"}
 
 _BATCH_REASONING_RULES = (
     "Evaluate each requirement below using ONLY the evidence snippets provided for it. "
@@ -268,6 +272,17 @@ _BATCH_REASONING_RULES = (
     "If no evidence is given, or the evidence doesn't clearly demonstrate the requirement "
     "under either rule above, mark satisfied=false. Do not assume or infer skills beyond "
     "what the evidence shows. "
+    "For every requirement you mark satisfied=true, also classify evidence_type -- exactly "
+    "one of: 'skills_only' (the ONLY evidence is a bare mention inside a skills/technologies "
+    "list, with no sentence showing it being used), 'project_mention' (mentioned within a "
+    "personal/side-project description, without a clear specific action or outcome tied to "
+    "it), 'experience_mention' (mentioned within a work-experience bullet, without a clear "
+    "specific action or outcome tied to it), or 'demonstrated_usage' (evidence shows the "
+    "skill actively being used to build, do, or achieve something concrete -- an action or "
+    "outcome involving the skill, not just its name). Classify strictly by how the evidence "
+    "itself demonstrates the skill -- never inflate a bare list mention to a higher tier "
+    "just because the requirement is important. Leave evidence_type null when "
+    "satisfied=false. "
 )
 
 _RUBRIC_SYSTEM_PROMPT = (
@@ -276,11 +291,13 @@ _RUBRIC_SYSTEM_PROMPT = (
 
 
 def _parse_plaintext_verdicts(raw: str) -> list[dict]:
-    """Parses the Requirement/Satisfied/Confidence/Evidence/Justification block
-    format used by the plain-text (non-tool-calling) rubric path. Deliberately
-    lenient -- a block with a missing or malformed field just yields a partial
-    dict, and _reconcile_batch_verdicts already backfills anything unusable,
-    the same safety net that covers tool-calling failures.
+    """Parses the Requirement/Satisfied/Evidence_type/Evidence/Justification
+    block format used by the plain-text (non-tool-calling) rubric path.
+    Deliberately lenient -- a block with a missing or malformed field just
+    yields a partial dict, and _reconcile_batch_verdicts already backfills
+    anything unusable, the same safety net that covers tool-calling
+    failures. confidence is left unset here -- _evaluate_rubric_batch
+    computes it deterministically from evidence_type for every path.
     """
     blocks = re.split(r"\n\s*-{3,}\s*\n?", raw.strip())
     parsed: list[dict] = []
@@ -300,10 +317,7 @@ def _parse_plaintext_verdicts(raw: str) -> list[dict]:
         requirement = (
             requirement_match.group(1) if requirement_match else fields["requirement"].split("(")[0].strip()
         )
-        try:
-            confidence = float(fields.get("confidence", "0"))
-        except ValueError:
-            confidence = 0.0
+        evidence_type = fields.get("evidence_type", "").strip().lower().strip("'\"")
         evidence_text = fields.get("evidence", "").strip().strip("'\"")
         evidence = [] if evidence_text.lower() in ("", "none") else [evidence_text]
         parsed.append(
@@ -311,7 +325,7 @@ def _parse_plaintext_verdicts(raw: str) -> list[dict]:
                 "requirement": requirement,
                 "weight": 0.0,  # overwritten by _reconcile_batch_verdicts with the real batch weight
                 "satisfied": fields.get("satisfied", "").strip().lower() == "true",
-                "confidence": max(0.0, min(1.0, confidence)),
+                "evidence_type": evidence_type if evidence_type in _VALID_EVIDENCE_TYPES else None,
                 "justification": fields.get("justification", ""),
                 "evidence": evidence,
             }
@@ -435,7 +449,7 @@ def _build_rubric_toolcall_prompt(sections: list[str], requirement_count: int) -
         "listed below, no more, no fewer, in the same order. Do not invent, add, or infer any "
         "additional requirements from the evidence text itself (e.g. do not turn resume phrases "
         "like job titles or skills into new requirements). Each verdict object must contain "
-        "exactly these keys, each only once: requirement, weight, satisfied, confidence, "
+        "exactly these keys, each only once: requirement, weight, satisfied, evidence_type, "
         "justification, evidence.\n\n" + "\n\n".join(sections)
     )
 
@@ -543,7 +557,8 @@ def _evaluate_rubric_batch_plaintext(
         "plain-text format (no JSON, no markdown, no extra commentary outside these fields):\n\n"
         "Requirement: <the requirement text>\n"
         "Satisfied: <True or False>\n"
-        "Confidence: <a number between 0 and 1>\n"
+        "Evidence_type: <skills_only, project_mention, experience_mention, or demonstrated_usage -- "
+        "only if Satisfied is True, otherwise leave blank>\n"
         "Evidence: <a single short quoted snippet from the evidence provided, under 25 words, or 'none'>\n"
         "Justification: <one short sentence>\n"
         "---\n\n"
@@ -600,6 +615,21 @@ def _evaluate_rubric_batch(
         if not v.satisfied:
             v.evidence = []
 
+    # The model classifies evidence_type (a small, reliable categorical
+    # judgment); confidence is always computed here, deterministically, from
+    # that classification -- never trusted from the model directly. Falls
+    # back to the most conservative tier if the model left evidence_type
+    # unset/invalid on a satisfied verdict, rather than silently scoring it
+    # as fully demonstrated.
+    for v in full_verdicts:
+        if v.satisfied:
+            v.confidence = settings.evidence_type_weights.get(
+                v.evidence_type, settings.evidence_type_weights["skills_only"]
+            )
+        else:
+            v.confidence = 0.0
+            v.evidence_type = None
+
     reconciled = _reconcile_batch_verdicts(batch, full_verdicts)
     logger.debug(
         "_evaluate_rubric_batch batch=%r reconciled_verdicts=%r",
@@ -639,6 +669,7 @@ def _reconcile_batch_verdicts(
                 requirement=original_requirement,
                 weight=weight,
                 satisfied=False,
+                evidence_type=None,
                 confidence=0.0,
                 justification="Could not be reliably evaluated for this candidate.",
                 evidence=[],
@@ -778,6 +809,153 @@ def evaluate_rubric(
     return RubricResult(verdicts=all_verdicts)
 
 
+_EXTERNAL_VERIFICATION_SYSTEM = (
+    "You are a meticulous fact-checker verifying whether external evidence (e.g. GitHub repository "
+    "content) genuinely demonstrates real, hands-on usage of a specific skill -- not just an "
+    "incidental mention."
+)
+
+
+def _rank_external_evidence(
+    requirement: str,
+    query_vector: np.ndarray,
+    chunk_vectors: np.ndarray,
+    bm25: BM25Okapi,
+    chunks: list[ExternalEvidenceChunk],
+    top_k: int = 3,
+) -> list[ExternalEvidenceChunk]:
+    """BM25 + dense fusion only, no rerank pass -- deliberately, unlike
+    retrieve_evidence. Resume evidence sets can run to dozens of chunks,
+    where a cross-encoder rerank meaningfully improves precision; a
+    candidate's external evidence is a handful of GitHub chunks at most, so
+    fusion ranking alone is precise enough, and skipping rerank removes a
+    whole Cohere round-trip per requirement -- real rate-limit pressure on
+    top of the resume side's own per-requirement rerank calls.
+
+    Takes chunk_vectors/bm25/query_vector as already-computed inputs rather
+    than building them itself -- the caller computes those once and reuses
+    them across every requirement being checked, since external_chunks is
+    the same data on every call.
+    """
+    dense_scores = chunk_vectors @ query_vector
+    bm25_scores = np.array(bm25.get_scores(_tokenize(requirement)))
+    fused = (
+        1.0 / (settings.rrf_k + _ranks_from_scores(dense_scores) + 1)
+        + 1.0 / (settings.rrf_k + _ranks_from_scores(bm25_scores) + 1)
+    )
+    top_idx = np.argsort(-fused)[:top_k]
+    return [chunks[i] for i in top_idx]
+
+
+def corroborate_with_external_evidence(
+    rubric: RubricResult, external_chunks: list[ExternalEvidenceChunk], model: str | None = None
+) -> RubricResult:
+    """Checks whether a candidate's external evidence (currently: GitHub repo
+    content) corroborates or upgrades requirements resume text alone only
+    weakly supports -- or rescues one resume text missed entirely.
+
+    Never trusts a keyword hit alone: the retrieved external snippets per
+    requirement still go through the same evidence-citation LLM check used
+    for resume evidence, so a repo merely name-dropping a technology in a
+    dependency list doesn't count any more than a resume doing the same
+    would. Only ever upgrades a verdict, never downgrades one -- external
+    evidence can corroborate a claim, it can't disprove one.
+    """
+    logger = get_logger()
+    if not external_chunks:
+        return rubric
+
+    # Already-maxed verdicts can't score any higher, so checking them would
+    # spend a retrieval+LLM call for nothing.
+    needs_check = [
+        v for v in rubric.verdicts if v.evidence_type not in ("demonstrated_usage", "external_verification")
+    ]
+    if not needs_check:
+        return rubric
+
+    # Computed once and reused for every requirement below -- external_chunks
+    # is the same data on every check, so re-embedding/re-indexing it per
+    # requirement (the previous version of this function did exactly that)
+    # was pure waste, not just something worth parallelizing.
+    chunk_texts = [c.text for c in external_chunks]
+    chunk_vectors = embed_texts(chunk_texts)
+    bm25 = BM25Okapi([_tokenize(t) for t in chunk_texts])
+
+    # One batched embed call for every requirement's query, instead of one
+    # call per requirement.
+    query_vectors = embed_texts([v.requirement for v in needs_check], input_type="search_query")
+
+    retrieved: dict[str, list[ExternalEvidenceChunk]] = {}
+    for v, query_vector in zip(needs_check, query_vectors):
+        hits = _rank_external_evidence(v.requirement, query_vector, chunk_vectors, bm25, external_chunks)
+        if hits:
+            retrieved[v.requirement] = hits
+
+    if not retrieved:
+        return rubric
+
+    sections = []
+    for requirement, hits in retrieved.items():
+        # Not re-truncated here -- chunks are already bounded at collection
+        # time (settings.github_readme_max_chars), and a fixed small cutoff
+        # here risks slicing off the actual evidence if it's not near the
+        # start of a README (badges/images/intro often come first).
+        evidence_block = "\n".join(f"- {c.text}" for c in hits)
+        sections.append(f'Requirement: "{requirement}"\nExternal evidence:\n{evidence_block}')
+
+    user_prompt = (
+        "For each requirement below, decide whether the external evidence genuinely demonstrates "
+        "real, hands-on usage of it -- not just the word appearing incidentally (e.g. in an "
+        "unrelated file listing, or a dependency name with no actual usage shown). Quote the exact "
+        f"snippet that supports your decision. Return EXACTLY {len(sections)} verdict object(s), "
+        "one per requirement listed below, in the same order, no more, no fewer.\n\n"
+        + "\n\n".join(sections)
+    )
+
+    try:
+        result: ExternalCorroborationResult = call_structured(
+            system=_EXTERNAL_VERIFICATION_SYSTEM,
+            user=user_prompt,
+            schema=ExternalCorroborationResult,
+            model=model,
+        )
+    except Exception as e:
+        logger.warning("corroborate_with_external_evidence: verification call failed (%s), skipping", e)
+        return rubric
+
+    by_requirement = {v.requirement.strip().lower(): v for v in result.verdicts}
+    weight = settings.evidence_type_weights["external_verification"]
+
+    updated_verdicts = []
+    for v in rubric.verdicts:
+        corroboration = by_requirement.get(v.requirement.strip().lower())
+        if corroboration and corroboration.corroborated and v.requirement in retrieved:
+            source_url = retrieved[v.requirement][0].source_url
+            new_evidence = v.evidence + [corroboration.evidence] if corroboration.evidence else v.evidence
+            v = v.model_copy(
+                update={
+                    "satisfied": True,
+                    "evidence_type": "external_verification",
+                    "confidence": weight,
+                    "external_source_url": source_url,
+                    "evidence": new_evidence,
+                    "justification": (
+                        f"{v.justification} Corroborated by external evidence: "
+                        f"{corroboration.justification}"
+                    ).strip(),
+                    "suggested_certification": None,  # no longer a gap, don't suggest closing it
+                }
+            )
+        updated_verdicts.append(v)
+
+    logger.info(
+        "corroborate_with_external_evidence checked=%d upgraded=%d",
+        len(retrieved),
+        sum(1 for v in updated_verdicts if v.evidence_type == "external_verification"),
+    )
+    return RubricResult(verdicts=updated_verdicts)
+
+
 def match_resume_to_requirements(
     batch_id: str,
     filename: str,
@@ -837,6 +1015,19 @@ def match_resume_to_requirements(
         batch_size=batch_size,
         should_stop=should_stop,
     )
+
+    # External verification (currently: GitHub) -- skipped entirely, zero
+    # added cost or latency, when the resume has no GitHub link at all. Runs
+    # inside the "scoring" stage rather than as its own UI stage since it's
+    # bounded and usually fast; a GitHub outage or rate limit just means no
+    # upgrade, never a failed analysis (see collect_github_evidence).
+    if not (should_stop and should_stop()):
+        github_urls = [u for u in extract_urls(resume_text) if u.kind in ("github_profile", "github_repo")]
+        if github_urls:
+            external_chunks = collect_github_evidence(github_urls)
+            if external_chunks:
+                result = corroborate_with_external_evidence(result, external_chunks, model=model)
+
     notify("scoring", "done")
     logger.info(
         "match_resume_to_requirements END filename=%s verdicts=%r",

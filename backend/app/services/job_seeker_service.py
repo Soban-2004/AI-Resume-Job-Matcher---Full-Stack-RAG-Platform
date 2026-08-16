@@ -135,7 +135,12 @@ def analyze_job_seeker(
     overall_fit_score = calculate_overall_fit_score(resume_text, job_desc_text)
 
     total_weight = sum(jd_skill_weights.values())
-    satisfied_weight = sum(v.weight for v in rubric.verdicts if v.satisfied)
+    # v.confidence is the deterministic evidence-strength multiplier (see
+    # rag_matching._evaluate_rubric_batch) -- a requirement backed only by a
+    # bare Skills-list mention contributes less to the score than one with
+    # demonstrated usage, even though both count as "matched" in the
+    # matched/missing lists below.
+    satisfied_weight = sum(v.weight * v.confidence for v in rubric.verdicts if v.satisfied)
     normalized_score = (satisfied_weight / total_weight * 100) if total_weight > 0 else 0.0
 
     matched_requirements = [v.requirement for v in rubric.verdicts if v.satisfied]

@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     cohere_api_key: str = ""
 
+    # Optional -- unauthenticated GitHub API access is capped at 60 req/hr,
+    # fine for occasional job-seeker use but tight for recruiter batch runs.
+    # A personal access token (no special scopes needed, just public repo
+    # read access) raises that to 5000/hr.
+    github_token: str = ""
+    github_max_repos_per_candidate: int = 4
+    github_readme_max_chars: int = 2000
+
     # llama-3.3-70b-versatile hit its 100k/day free-tier token quota during
     # testing. Groq's quotas are per-model, so llama-3.1-8b-instant gives us
     # an untouched budget -- also smaller/faster, matching the "personal
@@ -53,6 +61,26 @@ class Settings(BaseSettings):
     # host) to Cohere's hosted embed/rerank endpoints -- no local model to load.
     embedding_model: str = "embed-v4.0"
     reranker_model: str = "rerank-v3.5"
+
+    # A bare mention in a Skills list and a fully demonstrated "built X using
+    # Y" claim both used to score identical (satisfied=true, confidence=1.0)
+    # -- easy to game by just listing every buzzword you can think of. The
+    # LLM now only classifies WHICH of these categories the cited evidence
+    # falls into (a small, reliable judgment call); this mapping is what
+    # actually turns that classification into a score, kept here as plain
+    # data so it's easy to tune after real-world testing without touching
+    # the rubric prompt itself.
+    # "external_verification" (corroborated by real external evidence, e.g. a
+    # GitHub repo actually containing Kubernetes manifests) is trusted at the
+    # same ceiling as demonstrated_usage -- an external artifact is at least
+    # as credible as self-reported resume prose, not less.
+    evidence_type_weights: dict[str, float] = {
+        "skills_only": 0.50,
+        "project_mention": 0.75,
+        "experience_mention": 0.85,
+        "demonstrated_usage": 1.00,
+        "external_verification": 1.00,
+    }
 
     # Groq's free tier caps llama-3.3-70b-versatile at 12,000 TPM. Running
     # candidates concurrently means several large rubric-scoring prompts
