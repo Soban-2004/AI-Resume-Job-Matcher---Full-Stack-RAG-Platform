@@ -34,6 +34,21 @@ def get_resume(db: Session, user_id: str, resume_id: str) -> Resume | None:
     return db.scalar(select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id))
 
 
+def delete_resume(db: Session, user_id: str, resume_id: str) -> bool:
+    """Scoped to user_id so one user can never delete another's resume by
+    guessing an ID. Only removes the resume row -- any AnalysisReport rows
+    referencing it via resume_id keep working for viewing (result_json
+    already has the full saved result), they just lose the ability to
+    generate a fresh cover letter/optimized resume off it afterward (see
+    _load_report_and_resume's 409, an already-handled case)."""
+    resume = get_resume(db, user_id, resume_id)
+    if not resume:
+        return False
+    db.delete(resume)
+    db.commit()
+    return True
+
+
 def save_analysis_report(
     db: Session,
     user_id: str,

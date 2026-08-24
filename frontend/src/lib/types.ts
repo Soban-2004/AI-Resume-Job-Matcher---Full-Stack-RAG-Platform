@@ -101,6 +101,10 @@ export interface ResumeLibraryItem {
   created_at: string;
 }
 
+export interface ResumeDetail extends ResumeLibraryItem {
+  resume_text: string;
+}
+
 export interface ReportSummary {
   id: string;
   resume_filename: string;

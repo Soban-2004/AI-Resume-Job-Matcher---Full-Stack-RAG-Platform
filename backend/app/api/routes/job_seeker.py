@@ -127,6 +127,35 @@ async def list_resumes(user: CurrentUser = Depends(get_current_user)) -> list[di
         db.close()
 
 
+@router.get("/resumes/{resume_id}")
+async def get_resume(resume_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    db = get_db_session()
+    try:
+        resume = crud.get_resume(db, user.id, resume_id)
+        if not resume:
+            raise HTTPException(status_code=404, detail="Resume not found.")
+        return {
+            "id": resume.id,
+            "filename": resume.filename,
+            "resume_text": resume.resume_text,
+            "created_at": resume.created_at.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+@router.delete("/resumes/{resume_id}")
+async def delete_resume(resume_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    db = get_db_session()
+    try:
+        deleted = crud.delete_resume(db, user.id, resume_id)
+    finally:
+        db.close()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+    return {"status": "deleted"}
+
+
 @router.get("/reports")
 async def list_reports(user: CurrentUser = Depends(get_current_user)) -> list[dict]:
     db = get_db_session()

@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FileDropzone } from "@/components/app/file-dropzone";
 import { ScoreRing } from "@/components/app/score-ring";
 import { StageProgressList } from "@/components/app/stage-progress";
@@ -19,10 +20,10 @@ import { AnalysisResultView } from "@/components/app/analysis-result-view";
 import { JobSeekerDashboard } from "@/components/app/job-seeker-dashboard";
 import { BlurFadeIn } from "@/components/motion/reveal";
 import { GRADIENT_CTA } from "@/lib/category-theme";
-import { createJobSeekerJob, getJobSeekerJob, getReport, stopJobSeekerJob } from "@/lib/api";
+import { createJobSeekerJob, getJobSeekerJob, getReport, getResume, stopJobSeekerJob } from "@/lib/api";
 import { useJobPolling } from "@/lib/use-job-polling";
 import { cn } from "@/lib/utils";
-import type { JdRequirement, JobSeekerAnalysisResponse, RequirementVerdict } from "@/lib/types";
+import type { JdRequirement, JobSeekerAnalysisResponse, RequirementVerdict, ResumeDetail } from "@/lib/types";
 
 function computeProvisionalScore(jdRequirements: JdRequirement[], verdicts: RequirementVerdict[]): number {
   const totalWeight = jdRequirements.reduce((sum, r) => sum + r.weight, 0);
@@ -31,13 +32,15 @@ function computeProvisionalScore(jdRequirements: JdRequirement[], verdicts: Requ
   return (satisfiedWeight / totalWeight) * 100;
 }
 
-type View = "dashboard" | "form" | "report";
+type View = "dashboard" | "form" | "report" | "resume";
 
 export default function JobSeekerPage() {
   const [view, setView] = useState<View>("dashboard");
   const [viewedReport, setViewedReport] = useState<JobSeekerAnalysisResponse | null>(null);
   const [viewedReportId, setViewedReportId] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [viewedResume, setViewedResume] = useState<ResumeDetail | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   // Overrides status.result once the user generates a cover letter/optimized
   // resume on demand -- status is owned by useJobPolling and stops updating
   // once the job completes, so this is the only place a post-completion edit
@@ -103,6 +106,18 @@ export default function JobSeekerPage() {
     }
   }
 
+  async function handleViewResume(resumeId: string) {
+    setResumeError(null);
+    setViewedResume(null);
+    setView("resume");
+    try {
+      const resume = await getResume(resumeId);
+      setViewedResume(resume);
+    } catch (e) {
+      setResumeError(e instanceof Error ? e.message : "Failed to load resume.");
+    }
+  }
+
   async function handleStop() {
     if (!jobId) return;
     setStopping(true);
@@ -121,6 +136,8 @@ export default function JobSeekerPage() {
     setSubmitError(null);
     setViewedReport(null);
     setViewedReportId(null);
+    setViewedResume(null);
+    setResumeError(null);
     setResultOverride(null);
     setView("dashboard");
   }
@@ -189,7 +206,11 @@ export default function JobSeekerPage() {
             exit={{ opacity: 0, y: -8, filter: "blur(6px)" }}
             transition={{ type: "spring", stiffness: 280, damping: 30 }}
           >
-            <JobSeekerDashboard onNewAnalysis={() => setView("form")} onViewReport={handleViewReport} />
+            <JobSeekerDashboard
+              onNewAnalysis={() => setView("form")}
+              onViewReport={handleViewReport}
+              onViewResume={handleViewResume}
+            />
           </motion.div>
         )}
 
@@ -208,6 +229,43 @@ export default function JobSeekerPage() {
             )}
             {viewedReport && (
               <AnalysisResultView result={viewedReport} reportId={viewedReportId} onResultChange={setViewedReport} />
+            )}
+          </motion.div>
+        )}
+
+        {!jobId && view === "resume" && (
+          <motion.div
+            key="resume"
+            initial={{ opacity: 0, y: 8, filter: "blur(6px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -8, filter: "blur(6px)" }}
+            transition={{ type: "spring", stiffness: 280, damping: 30 }}
+          >
+            {resumeError && (
+              <Alert variant="destructive">
+                <AlertDescription>{resumeError}</AlertDescription>
+              </Alert>
+            )}
+            {!viewedResume && !resumeError && (
+              <Card className="flex flex-col gap-3 p-6">
+                <Skeleton className="h-5 w-1/3" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
+              </Card>
+            )}
+            {viewedResume && (
+              <Card className="flex flex-col gap-3 p-6">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-foreground">{viewedResume.filename}</h2>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    Uploaded {new Date(viewedResume.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/80">
+                  {viewedResume.resume_text}
+                </p>
+              </Card>
             )}
           </motion.div>
         )}

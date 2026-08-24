@@ -6,6 +6,7 @@ import type {
   ProjectDetail,
   ProjectSummary,
   ReportSummary,
+  ResumeDetail,
   ResumeLibraryItem,
 } from "./types";
 
@@ -63,6 +64,22 @@ export async function listResumes(): Promise<ResumeLibraryItem[]> {
   const res = await fetch(`${API_BASE_URL}/api/job-seeker/resumes`, { headers: await authHeaders() });
   if (!res.ok) throw new Error(await parseErrorDetail(res));
   return res.json();
+}
+
+export async function getResume(resumeId: string): Promise<ResumeDetail> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/resumes/${resumeId}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  return res.json();
+}
+
+export async function deleteResume(resumeId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/resumes/${resumeId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
 }
 
 export async function listReports(): Promise<ReportSummary[]> {
