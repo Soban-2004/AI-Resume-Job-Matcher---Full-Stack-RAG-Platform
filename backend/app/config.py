@@ -23,38 +23,45 @@ class Settings(BaseSettings):
     github_readme_max_chars: int = 2000
 
     # llama-3.3-70b-versatile hit its 100k/day free-tier token quota during
-    # testing. Groq's quotas are per-model, so llama-3.1-8b-instant gives us
-    # an untouched budget -- also smaller/faster, matching the "personal
-    # project, not enterprise scale" framing.
-    llm_model: str = "llama-3.1-8b-instant"
+    # testing, so we moved to llama-3.1-8b-instant for an untouched budget.
+    # Groq deprecated BOTH of those on 2026-08-16 (see
+    # console.groq.com/docs/deprecations); openai/gpt-oss-20b is Groq's own
+    # recommended replacement for llama-3.1-8b-instant. Unlike that old
+    # model, gpt-oss-20b is a reasoning model -- see _REASONING_MODEL_MIN_EFFORT
+    # in core/llm.py for how its reasoning-token overhead is kept in check.
+    llm_model: str = "openai/gpt-oss-20b"
 
-    # qwen/qwen3.6-27b initially failed outright under Groq's forced
-    # tool_choice (no valid tool call, not even a malformed one to recover).
-    # Root cause: it's a reasoning model that burns max_completion_tokens on
-    # an internal <think> trace before ever emitting the tool call. Fixed by
-    # skipping tool-calling for it and using plain-text completion with
-    # reasoning_effort="none" instead (see _evaluate_rubric_batch_plaintext /
-    # _PLAINTEXT_MODELS) -- kept available as an explicit-override path for
-    # testing, but it is NOT part of the default rubric-check pipeline below.
-    rubric_check_reasoning_effort: str | None = "none"
+    # qwen/qwen3.6-27b and openai/gpt-oss-20b both initially failed under
+    # Groq's forced tool_choice -- as reasoning models, they burn part of
+    # max_completion_tokens on an internal <think> trace before ever
+    # emitting the tool call, and occasionally (~1-in-4 to ~1-in-2 observed
+    # for gpt-oss-20b) emit a schema-valid but empty {"verdicts": []} tool
+    # call instead of doing the work. Fixed by skipping tool-calling for
+    # both and using plain-text completion instead (see
+    # _evaluate_rubric_batch_plaintext / _PLAINTEXT_MODELS in
+    # rag_matching.py) -- the exact reasoning_effort value each needs
+    # ("none" for Qwen, "low" for gpt-oss -- gpt-oss 400s on "none")
+    # is picked automatically per model by _REASONING_MODEL_MIN_EFFORT in
+    # core/llm.py, not configured here.
 
     # The rubric check ("skill matching") runs a three-tier fallback chain by
-    # default -- see _evaluate_rubric_batch_tiered in rag_matching.py. All
-    # three tiers share one tool-calling pipeline shape; only the client/API
-    # differs per tier:
+    # default -- see _evaluate_rubric_batch_tiered in rag_matching.py:
     #   1. Gemma 4 31B via Ollama Cloud (free, ~14.4K req/day class quota --
     #      validated for citation accuracy on the full 16-requirement JD).
     #   2. Gemini 3.1 Flash Lite via Google AI Studio (good quality, 500
     #      req/day -- unlike full Gemini Flash's ~20/day, this tier actually
     #      gets exercised as a real second layer, not a token gesture).
-    #   3. llama-3.1-8b-instant via Groq -- the most heavily-hardened path in
-    #      this codebase; final safety net if both tiers above fail for any
-    #      reason (quota, outage, malformed response -- see
+    #   3. openai/gpt-oss-20b via Groq, routed through the plain-text path
+    #      above (it's in _PLAINTEXT_MODELS) -- the most heavily-hardened
+    #      path in this codebase; final safety net if both tiers above fail
+    #      for any reason (quota, outage, malformed response -- see
     #      _evaluate_rubric_batch_tiered's broad catch for why we don't try
-    #      to distinguish the failure cause for tiers 1-2).
+    #      to distinguish the failure cause for tiers 1-2). Was
+    #      llama-3.1-8b-instant (a non-reasoning model, tool-calling was
+    #      fine) until Groq deprecated it 2026-08-16.
     rubric_ollama_model: str = "gemma4:31b-cloud"
     rubric_gemini_model: str = "gemini-3.1-flash-lite"
-    rubric_check_fallback_model: str = "llama-3.1-8b-instant"
+    rubric_check_fallback_model: str = "openai/gpt-oss-20b"
 
     # Moved off local sentence-transformers/CrossEncoder (torch import + model
     # deserialization was the dominant chunk of cold-start time on a free-tier
@@ -97,8 +104,9 @@ class Settings(BaseSettings):
     fusion_candidate_k: int = 10  # candidates kept after BM25+dense fusion, before rerank
 
     # A single rubric call covering every JD requirement can exceed smaller
-    # models' per-request TPM ceiling (e.g. llama-3.1-8b-instant caps at
-    # 6,000 TPM; a 19-requirement prompt needed 7,325). Batching keeps each
+    # models' per-request TPM ceiling (e.g. the old llama-3.1-8b-instant
+    # capped at 6,000 TPM; a 19-requirement prompt needed 7,325). Batching
+    # keeps each
     # call comfortably sized regardless of which model is plugged in.
     # `_reconcile_batch_verdicts()` is what makes batching safe from a
     # "missing/hallucinated requirement" standpoint -- it discards anything

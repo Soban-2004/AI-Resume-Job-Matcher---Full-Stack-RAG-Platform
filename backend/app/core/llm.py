@@ -35,6 +35,20 @@ _MODEL_TPM_LIMITS = {
 }
 _DEFAULT_TPM_LIMIT = 6000  # conservative fallback for any unlisted model
 _CHARS_PER_TOKEN_ESTIMATE = 4  # rough heuristic, no tokenizer dependency needed
+
+# Reasoning models spend part of their completion budget on an internal trace
+# before the actual answer/tool call -- unmanaged, this is exactly what broke
+# Qwen (qwen/qwen3.6-27b) under forced tool_choice (see rag_matching.py's
+# _PLAINTEXT_MODELS comment: it burned its whole budget on the trace and
+# never emitted a tool call). Each model here gets its lowest valid
+# reasoning_effort so every caller is safe by default without having to know
+# which models are reasoning models. "none" only exists for Qwen -- gpt-oss
+# rejects it outright and only accepts low/medium/high (console.groq.com/docs/reasoning).
+_REASONING_MODEL_MIN_EFFORT = {
+    "openai/gpt-oss-20b": "low",
+    "openai/gpt-oss-120b": "low",
+    "qwen/qwen3.6-27b": "none",
+}
 # Real technical text (resumes/JDs: acronyms, punctuation, camelCase schema
 # fields) tokenizes less efficiently than plain English, so the 4-chars/token
 # heuristic underestimates true usage. A wide margin absorbs that error.
@@ -155,6 +169,8 @@ def call_llm(
     that don't support the param, since Groq rejects it outright otherwise.
     """
     resolved_model = model or settings.llm_model
+    if reasoning_effort is None:
+        reasoning_effort = _REASONING_MODEL_MIN_EFFORT.get(resolved_model)
     user = _fit_user_prompt_to_budget(system, user, resolved_model, max_tokens)
     client = get_groq_client()
 
@@ -184,6 +200,7 @@ def call_structured(
     model: str | None = None,
     temperature: float = 0.2,
     max_completion_tokens: int = 1024,
+    reasoning_effort: str | None = None,
 ) -> BaseModel:
     """Force the model to return JSON matching `schema` via tool-calling.
 
@@ -193,6 +210,8 @@ def call_structured(
     into garbage.
     """
     resolved_model = model or settings.llm_model
+    if reasoning_effort is None:
+        reasoning_effort = _REASONING_MODEL_MIN_EFFORT.get(resolved_model)
     client = get_groq_client()
     tool_name = f"emit_{schema.__name__.lower()}"
     tool = {
@@ -212,6 +231,13 @@ def call_structured(
     )
 
     def _make_request():
+        kwargs = {}
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
+            # Groq 400s if reasoning_format is left at its "raw" default
+            # while tool calling is active -- must be "parsed" or "hidden".
+            # We don't need the trace itself, just the tool call.
+            kwargs["reasoning_format"] = "hidden"
         return client.chat.completions.create(
             model=resolved_model,
             messages=[
@@ -225,6 +251,7 @@ def call_structured(
             # model's default completion-token ceiling mid-JSON, producing
             # an unrecoverable truncated tool call instead of a clean one.
             max_completion_tokens=max_completion_tokens,
+            **kwargs,
         )
 
     for attempt in range(_MAX_MALFORMED_RETRY_ATTEMPTS + 1):

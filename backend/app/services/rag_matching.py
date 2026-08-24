@@ -238,14 +238,25 @@ def _requirement_section(requirement: str, weight: float, evidence_map: dict[str
 
 
 # Qwen (qwen/qwen3.6-27b) is a reasoning model that reliably outperforms
-# llama-3.1-8b-instant on evidence-citation accuracy, but fails outright
+# the (now-deprecated) llama-3.1-8b-instant on evidence-citation accuracy, but fails outright
 # under Groq's forced tool_choice -- it burns its completion budget on an
 # internal <think> trace before ever emitting the tool call. The fix isn't a
 # bigger budget (that just buys it more room to think, not to answer -- and
-# at 4096 tokens it was still spending ~2400 on the trace alone); it's
-# reasoning_effort="none" plus a plain-text completion instead of tool
-# calling. Any model added here must go through _evaluate_rubric_batch_plaintext.
-_PLAINTEXT_MODELS = {"qwen/qwen3.6-27b"}
+# at 4096 tokens it was still spending ~2400 on the trace alone); it's a
+# lower reasoning_effort (per-model default picked by
+# _REASONING_MODEL_MIN_EFFORT in core/llm.py) plus a plain-text completion
+# instead of tool calling. Any model added here must go through
+# _evaluate_rubric_batch_plaintext.
+#
+# openai/gpt-oss-20b (Groq's replacement for the deprecated
+# llama-3.1-8b-instant, see config.py) is here for the same reason, found the
+# same way: under forced tool_choice it reliably emitted a *schema-valid but
+# empty* {"verdicts": []} tool call roughly 1-in-4 to 1-in-2 of the time in
+# testing (worse than Qwen's outright failure, since nothing catches a
+# "successful" empty response -- it silently backfills every requirement in
+# the batch as unsatisfied via _reconcile_batch_verdicts). The plain-text
+# path was 8/8 clean in the same testing.
+_PLAINTEXT_MODELS = {"qwen/qwen3.6-27b", "openai/gpt-oss-20b"}
 
 _VERDICT_FIELD_RE = re.compile(
     r"^(requirement|satisfied|evidence_type|evidence|justification)\s*:\s*(.*)$", re.IGNORECASE
@@ -334,7 +345,12 @@ def _parse_plaintext_verdicts(raw: str) -> list[dict]:
 
 
 def _call_structured_groq(model: str, system: str, user: str, schema: type[BaseModel]) -> BaseModel:
-    return call_structured(system=system, user=user, schema=schema, model=model)
+    # 2048, not call_structured's 1024 default: openai/gpt-oss-20b (Groq's
+    # replacement for the deprecated llama-3.1-8b-instant, see config.py) is
+    # a reasoning model -- even at reasoning_effort="low" it spends some of
+    # the completion budget on an internal trace before the tool call JSON,
+    # and 1024 was observed truncating a 3-verdict batch response mid-JSON.
+    return call_structured(system=system, user=user, schema=schema, model=model, max_completion_tokens=2048)
 
 
 def _resolve_schema_refs(schema, defs: dict):
@@ -454,6 +470,16 @@ def _build_rubric_toolcall_prompt(sections: list[str], requirement_count: int) -
     )
 
 
+# openai/gpt-oss-20b (see config.py) occasionally emits a schema-valid but
+# empty {"verdicts": []} tool call under forced tool_choice, observed at
+# roughly a 1-in-4 rate in testing -- unlike a malformed/truncated call,
+# there's no exception to retry on: it's valid JSON that happens to be
+# wrong. Uncaught, this silently backfills every requirement in the batch as
+# unsatisfied via _reconcile_batch_verdicts's fallback, a false negative
+# rather than a loud failure. Retrying cubes the failure rate down to ~1.5%.
+_MAX_EMPTY_VERDICT_RETRY_ATTEMPTS = 2
+
+
 def _evaluate_rubric_batch_toolcall(
     call_fn: Callable[[str, str, str, type[BaseModel]], BaseModel],
     model: str,
@@ -470,6 +496,19 @@ def _evaluate_rubric_batch_toolcall(
         user_prompt,
     )
     result: RubricResultCore = call_fn(model, _RUBRIC_SYSTEM_PROMPT, user_prompt, RubricResultCore)
+    for attempt in range(_MAX_EMPTY_VERDICT_RETRY_ATTEMPTS):
+        if result.verdicts:
+            break
+        logger.warning(
+            "_evaluate_rubric_batch_toolcall model=%s returned an empty verdict list for a "
+            "%d-requirement batch (attempt %d/%d) -- retrying instead of accepting a silent "
+            "all-unsatisfied result",
+            model,
+            requirement_count,
+            attempt + 1,
+            _MAX_EMPTY_VERDICT_RETRY_ATTEMPTS,
+        )
+        result = call_fn(model, _RUBRIC_SYSTEM_PROMPT, user_prompt, RubricResultCore)
     logger.debug(
         "_evaluate_rubric_batch_toolcall model=%s raw_model_verdicts=%r",
         model,
@@ -487,7 +526,8 @@ def _evaluate_rubric_batch_toolcall(
 #   2. Gemini 3.1 Flash Lite via Google AI Studio -- good quality, 500 req/day
 #      quota (vs. ~20/day for the full Gemini Flash tier), a real second-tier
 #      option rather than one that never actually gets exercised.
-#   3. llama-3.1-8b-instant via Groq -- the original, most heavily-hardened
+#   3. openai/gpt-oss-20b via Groq (was llama-3.1-8b-instant until Groq
+#      deprecated it 2026-08-16) -- the original, most heavily-hardened
 #      path in this codebase; final safety net if both of the above fail.
 # We don't have Ollama's or Google's exact rate-limit error taxonomy
 # characterized (unlike Groq's, where is_daily_quota_error distinguishes a
@@ -539,6 +579,8 @@ def _evaluate_rubric_batch_tiered(
         if tier_index != last_tier_index and not _rubric_tier_available(tier_index):
             continue
         try:
+            if tier_model in _PLAINTEXT_MODELS:
+                return _evaluate_rubric_batch_plaintext(tier_model, batch, sections, requirement_count, logger)
             return _evaluate_rubric_batch_toolcall(call_fn, tier_model, batch, sections, requirement_count, logger)
         except Exception as e:
             if tier_index == last_tier_index:
@@ -578,7 +620,11 @@ def _evaluate_rubric_batch_plaintext(
         model=model,
         temperature=0.0,
         max_tokens=1024,
-        reasoning_effort=settings.rubric_check_reasoning_effort,
+        # Not settings.rubric_check_reasoning_effort here -- "none" is only
+        # a valid value for Qwen; gpt-oss rejects it outright (400) and only
+        # accepts low/medium/high. Leaving this unset lets call_llm's
+        # _REASONING_MODEL_MIN_EFFORT pick the right value per model instead
+        # of this function having to know which model needs which value.
     )
     logger.debug("_evaluate_rubric_batch_plaintext model=%s raw_output=%r", model, raw)
     parsed = _parse_plaintext_verdicts(raw)

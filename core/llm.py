@@ -5,5 +5,7 @@ import streamlit as st
 def load_llm():
     return ChatGroq(
     groq_api_key=st.secrets["GROQ_API_KEY"],
-    model_name="llama-3.1-8b-instant"
+    # llama-3.1-8b-instant was deprecated by Groq on 2026-08-16; this is
+    # their recommended replacement (console.groq.com/docs/deprecations).
+    model_name="openai/gpt-oss-20b"
 )
