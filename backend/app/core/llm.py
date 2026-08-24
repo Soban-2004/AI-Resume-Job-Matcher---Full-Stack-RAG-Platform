@@ -109,10 +109,35 @@ def _recover_from_malformed_tool_call(error: BadRequestError, schema: type[BaseM
     the API's native tool_calls field, which Groq rejects outright as
     tool_use_failed. The JSON payload itself is often still valid -- salvage
     it instead of failing the whole request.
+
+    failed_generation is normally the FULL tool-call wrapper --
+    '{"name": "emit_x", "arguments": {...}}' -- not bare arguments. Validating
+    that whole blob against `schema` directly (as this used to do) is a real
+    bug, not just an unlikely edge case: `schema`'s fields never match
+    `name`/`arguments`, so any field with a default (e.g. `default_factory=list`)
+    silently fills in from the default instead of raising -- validation
+    "succeeds" with an empty/wrong result instead of failing loudly. Extract
+    `arguments` first so recovery validates what the model actually tried to
+    say, not the wrapper around it.
     """
     try:
         body = error.body or {}
         failed_generation = body.get("error", {}).get("failed_generation", "")
+
+        try:
+            wrapper = json.loads(failed_generation)
+            arguments = wrapper.get("arguments") if isinstance(wrapper, dict) else None
+        except json.JSONDecodeError:
+            arguments = None
+
+        if arguments is not None:
+            if isinstance(arguments, str):
+                return schema.model_validate_json(arguments)
+            return schema.model_validate(arguments)
+
+        # failed_generation wasn't parseable as the wrapper shape (e.g. truly
+        # truncated mid-JSON) -- fall back to salvaging whatever {...} blob
+        # is in there at all.
         match = re.search(r"\{.*\}", failed_generation, re.DOTALL)
         if not match:
             print("[groq] recovery: no JSON-like blob found in failed_generation", flush=True)

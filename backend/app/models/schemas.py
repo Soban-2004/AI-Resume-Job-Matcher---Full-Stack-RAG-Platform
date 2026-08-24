@@ -19,7 +19,13 @@ class ExtractedUrl(BaseModel):
 
 
 class WeightedSkill(BaseModel):
-    skill: str = Field(description="Lowercase skill name")
+    # Named `name`, not `skill` -- openai/gpt-oss-20b (see config.py) reliably
+    # emitted "name" as the key for each list item regardless of what this
+    # field was actually called, which Groq's own schema validation then
+    # rejected outright (tool_use_failed) on every single call. Matching the
+    # model's natural naming fixed it 5/5 in testing; renaming the schema
+    # field is a real fix, unlike prompting it not to.
+    name: str = Field(description="Lowercase skill name")
     weight: float = Field(
         ge=0.0, le=1.0, description="Importance for the role: 0=least, 1=most important"
     )
@@ -126,7 +132,11 @@ class RubricResult(BaseModel):
 
 
 class CertificationSuggestion(BaseModel):
-    requirement: str = Field(description="The exact unsatisfied requirement/skill text this suggestion is for")
+    # Named `skill`, not `requirement` -- same openai/gpt-oss-20b field-naming
+    # bug as WeightedSkill above (see its comment): the model reliably used
+    # "skill" as the key here regardless of the schema's actual field name,
+    # which Groq's own schema validation rejected outright on every call.
+    skill: str = Field(description="The exact unsatisfied requirement/skill text this suggestion is for")
     suggested_certification: str | None = Field(
         default=None,
         description=(

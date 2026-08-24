@@ -25,7 +25,7 @@ def extract_weighted_skills_from_jd(jd_text: str, job_role: str, model: str | No
     # .strip() first: the model occasionally emits near-duplicate skill
     # entries that differ only in surrounding whitespace, which would
     # otherwise survive as two distinct dict keys after lowercasing alone.
-    return {item.skill.strip().lower(): item.weight for item in result.skills}
+    return {item.name.strip().lower(): item.weight for item in result.skills}
 
 
 _RESUME_WEIGHTED_SKILL_SYSTEM = (
@@ -54,4 +54,4 @@ def extract_weighted_skills_from_resume(resume_text: str, model: str | None = No
         schema=WeightedSkillList,
         model=model,
     )
-    return {item.skill.strip().lower(): item.weight for item in result.skills}
+    return {item.name.strip().lower(): item.weight for item in result.skills}

@@ -773,7 +773,7 @@ def _suggest_certifications(requirements: list[str], model: str | None) -> dict[
     by_key = {r.strip().lower(): r for r in requirements}
     kept: dict[str, str | None] = {}
     for s in result.suggestions:
-        key = s.requirement.strip().lower()
+        key = s.skill.strip().lower()
         if key in by_key and key not in kept:
             kept[key] = s.suggested_certification
 
