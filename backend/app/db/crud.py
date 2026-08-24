@@ -5,7 +5,14 @@ from app.db.models import AnalysisReport, ProjectCandidate, RecruitmentProject, 
 from app.models.schemas import CandidateResult, JobSeekerAnalysisResponse
 
 
-def save_resume(db: Session, user_id: str, filename: str, resume_text: str) -> Resume:
+def save_resume(
+    db: Session,
+    user_id: str,
+    filename: str,
+    resume_text: str,
+    file_bytes: bytes | None = None,
+    content_type: str | None = None,
+) -> Resume:
     # One row per (user, filename) -- re-analyzing the same resume overwrites
     # its stored text instead of accumulating duplicates in the library.
     existing = db.scalar(
@@ -13,11 +20,19 @@ def save_resume(db: Session, user_id: str, filename: str, resume_text: str) -> R
     )
     if existing:
         existing.resume_text = resume_text
+        existing.file_bytes = file_bytes
+        existing.content_type = content_type
         db.commit()
         db.refresh(existing)
         return existing
 
-    resume = Resume(user_id=user_id, filename=filename, resume_text=resume_text)
+    resume = Resume(
+        user_id=user_id,
+        filename=filename,
+        resume_text=resume_text,
+        file_bytes=file_bytes,
+        content_type=content_type,
+    )
     db.add(resume)
     db.commit()
     db.refresh(resume)

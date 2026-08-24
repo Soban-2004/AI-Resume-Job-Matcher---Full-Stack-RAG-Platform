@@ -1,9 +1,9 @@
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.rate_limit import enforce_job_creation_rate_limit
+from app.core.rate_limit import enforce_guest_rate_limit, enforce_job_creation_rate_limit
 from app.db import crud
 from app.db.session import get_db_session
 from app.models.schemas import (
@@ -15,6 +15,7 @@ from app.models.schemas import (
 )
 from app.services import job_store
 from app.services.document_loader import load_document
+from app.services.guest_samples import GUEST_SAMPLES
 from app.services.job_seeker_service import analyze_job_seeker, generate_cover_letter
 from app.services.job_store import StepState
 from app.services.resume_optimizer import optimize_and_verify
@@ -32,14 +33,21 @@ _STAGE_DEFS = [
 
 
 def _persist_report(
-    user_id: str, resume_filename: str, resume_text: str, job_role: str, jd_text: str, result: JobSeekerAnalysisResponse
+    user_id: str,
+    resume_filename: str,
+    resume_text: str,
+    resume_bytes: bytes | None,
+    resume_content_type: str | None,
+    job_role: str,
+    jd_text: str,
+    result: JobSeekerAnalysisResponse,
 ) -> str:
     # Runs after the response for this analysis job is already being polled
     # as "completed" -- a fresh, short-lived session here rather than a
     # request-scoped one, since background tasks outlive the request.
     db = get_db_session()
     try:
-        resume = crud.save_resume(db, user_id, resume_filename, resume_text)
+        resume = crud.save_resume(db, user_id, resume_filename, resume_text, resume_bytes, resume_content_type)
         report = crud.save_analysis_report(db, user_id, resume.id, resume_filename, job_role, jd_text, result)
         return report.id
     finally:
@@ -47,8 +55,19 @@ def _persist_report(
 
 
 async def _run_job(
-    job_id: str, resume_text: str, resume_filename: str, jd_text: str, job_role: str, user_id: str
+    job_id: str,
+    resume_text: str,
+    resume_filename: str,
+    resume_bytes: bytes | None,
+    resume_content_type: str | None,
+    jd_text: str,
+    job_role: str,
+    user_id: str | None,
 ) -> None:
+    # user_id is None for the unauthenticated guest-demo path (see
+    # create_guest_job) -- there's no account to own a saved resume/report
+    # under, so persistence below is skipped entirely for those runs. The
+    # result itself still lives in job_store for polling like any other job.
     job_store.set_running(job_id)
 
     def on_stage(stage: str, state: str) -> None:
@@ -83,8 +102,10 @@ async def _run_job(
             job_store.set_stopped(job_id, result)
         else:
             job_store.set_result(job_id, result)
-            if not job_store.is_stop_requested(job_id):
-                report_id = _persist_report(user_id, resume_filename, resume_text, job_role, jd_text, result)
+            if user_id is not None and not job_store.is_stop_requested(job_id):
+                report_id = _persist_report(
+                    user_id, resume_filename, resume_text, resume_bytes, resume_content_type, job_role, jd_text, result
+                )
                 job_store.set_report_id(job_id, report_id)
     except Exception as e:
         job_store.set_activity(job_id, None)
@@ -112,7 +133,58 @@ async def create_job(
 
     job = job_store.create_job("job_seeker", stage_defs=_STAGE_DEFS)
     background_tasks.add_task(
-        _run_job, job.id, resume_text, resume.filename or "resume", jd_text, job_role, user.id
+        _run_job,
+        job.id,
+        resume_text,
+        resume.filename or "resume",
+        resume_bytes,
+        resume.content_type,
+        jd_text,
+        job_role,
+        user.id,
+    )
+    return {"job_id": job.id}
+
+
+def _client_key(request: Request) -> str:
+    # Render sits behind a reverse proxy -- request.client.host alone would
+    # just be the proxy's own address, useless for per-visitor limiting.
+    # X-Forwarded-For's first entry is the original client when present.
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@router.post("/guest-jobs")
+async def create_guest_job(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    sample_role: str = Form(...),
+) -> dict:
+    """Unauthenticated demo path -- no login, but also no client-submitted
+    resume/JD text: sample_role only ever selects one of GUEST_SAMPLES'
+    fixed, server-side pairs, so this can never become a free-form pipeline
+    an anonymous caller controls the input to. See enforce_guest_rate_limit
+    for why that restriction matters as much as the rate limit itself.
+    """
+    enforce_guest_rate_limit(_client_key(request))
+
+    sample = GUEST_SAMPLES.get(sample_role)
+    if not sample:
+        raise HTTPException(status_code=400, detail="Unknown sample role.")
+
+    job = job_store.create_job("job_seeker", stage_defs=_STAGE_DEFS)
+    background_tasks.add_task(
+        _run_job,
+        job.id,
+        sample.resume_text,
+        "sample-resume.txt",
+        None,
+        None,
+        sample.jd_text,
+        sample.role,
+        None,
     )
     return {"job_id": job.id}
 
@@ -138,10 +210,32 @@ async def get_resume(resume_id: str, user: CurrentUser = Depends(get_current_use
             "id": resume.id,
             "filename": resume.filename,
             "resume_text": resume.resume_text,
+            # content_type is null for resumes saved before file_bytes existed
+            # -- the frontend falls back to the plain-text view for those.
+            "content_type": resume.content_type if resume.file_bytes else None,
             "created_at": resume.created_at.isoformat(),
         }
     finally:
         db.close()
+
+
+@router.get("/resumes/{resume_id}/file")
+async def get_resume_file(resume_id: str, user: CurrentUser = Depends(get_current_user)) -> Response:
+    """Serves the original uploaded bytes for format-native viewing (PDF in
+    an iframe, DOCX through a client-side converter) -- resume_text alone
+    only ever has the plain extracted content, not the real document."""
+    db = get_db_session()
+    try:
+        resume = crud.get_resume(db, user.id, resume_id)
+    finally:
+        db.close()
+    if not resume or not resume.file_bytes:
+        raise HTTPException(status_code=404, detail="No original file stored for this resume.")
+    return Response(
+        content=resume.file_bytes,
+        media_type=resume.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{resume.filename}"'},
+    )
 
 
 @router.delete("/resumes/{resume_id}")

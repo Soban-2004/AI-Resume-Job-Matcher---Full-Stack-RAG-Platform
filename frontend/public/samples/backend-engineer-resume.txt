@@ -1,0 +1,39 @@
+Arjun Mehta
+Pune, India
+arjun.mehta.dev@example.com | github.com/example | linkedin.com/in/example
+
+PROFESSIONAL SUMMARY
+Backend engineer with 3 years of experience building and scaling REST APIs and data-heavy
+services in Python. Comfortable owning a service from schema design through deployment.
+
+EXPERIENCE
+
+Backend Engineer | Fenwick Systems | Pune, India | Aug 2022 - Present
+- Designed and built REST APIs in Python using FastAPI, serving over 2M requests/day.
+- Modeled relational schemas in PostgreSQL and optimized slow queries, cutting p95 latency
+  on the orders endpoint by roughly 40%.
+- Added a Redis caching layer in front of a frequently-hit product-lookup endpoint.
+- Containerized all services with Docker and deployed them to Kubernetes.
+- Built and maintained CI/CD pipelines with GitHub Actions for automated testing and deploys.
+
+Software Engineer | Kestrel Data | Pune, India | Jun 2021 - Jul 2022
+- Built internal tooling in Python and PostgreSQL for the data engineering team.
+- Wrote unit and integration tests using pytest, raising coverage on a legacy module from
+  under 20% to over 70%.
+- Worked with AWS S3 and EC2 to support batch data-processing jobs.
+
+PROJECTS
+
+Task Queue Service (2022)
+- Built a small distributed task queue in Python backed by Redis, with a FastAPI-based
+  dashboard for monitoring job status.
+
+EDUCATION
+B.Tech Computer Science, Pune Institute of Technology (2017-2021)
+
+TECHNICAL SKILLS
+Programming: Python, SQL
+Frameworks: FastAPI, pytest
+Databases & Infra: PostgreSQL, Redis, Docker, Kubernetes, AWS (S3, EC2)
+DevOps: GitHub Actions, CI/CD
+Other: REST APIs, Git

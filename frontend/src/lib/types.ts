@@ -103,6 +103,9 @@ export interface ResumeLibraryItem {
 
 export interface ResumeDetail extends ResumeLibraryItem {
   resume_text: string;
+  // Null for resumes saved before format-native viewing existed, or for
+  // plain .txt uploads -- the viewer falls back to resume_text for those.
+  content_type: string | null;
 }
 
 export interface ReportSummary {

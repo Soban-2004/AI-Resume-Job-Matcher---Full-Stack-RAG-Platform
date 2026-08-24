@@ -1,0 +1,33 @@
+Backend Engineer
+
+Location: Remote
+
+Experience: 2-4 Years
+
+About the Role
+
+We're hiring a Backend Engineer to help build and scale the services powering our platform.
+You'll work primarily in Python, designing REST APIs, managing relational data, and deploying
+containerized services to the cloud.
+
+Responsibilities
+Design and build REST APIs using Python and FastAPI.
+Model and query relational data in PostgreSQL, including writing performant SQL.
+Add caching layers with Redis for hot-path endpoints.
+Containerize services with Docker and deploy to Kubernetes.
+Set up and maintain CI/CD pipelines using GitHub Actions.
+Write unit and integration tests, and participate in code review.
+Work with AWS services (EC2, S3, RDS) for infrastructure.
+
+Requirements
+2+ years of backend development experience.
+Strong proficiency in Python.
+Experience with FastAPI or a comparable web framework.
+Solid understanding of PostgreSQL and SQL query optimization.
+Familiarity with Docker and container-based deployment.
+Bachelor's degree in Computer Science or a related field.
+
+Nice to Have
+Experience with Kubernetes in production.
+Exposure to Redis or another caching layer.
+Experience with GitHub Actions or similar CI/CD tooling.

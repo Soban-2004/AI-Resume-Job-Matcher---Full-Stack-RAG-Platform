@@ -12,6 +12,7 @@ import {
   RadioTower,
   FileCheck2,
   KanbanSquare,
+  Eye,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,14 @@ export default function Home() {
               Rank candidates
             </Link>
           </div>
+
+          <Link
+            href="/demo"
+            className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            <Eye className="size-3.5" />
+            Just want to see what it looks like? View a sample report
+          </Link>
 
           <div className="mt-2 flex flex-wrap gap-2">
             {TRUST_BADGES.map((b) => (

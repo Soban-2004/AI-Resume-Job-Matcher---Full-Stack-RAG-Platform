@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { FileDropzone } from "@/components/app/file-dropzone";
 import { ScoreRing } from "@/components/app/score-ring";
 import { StageProgressList } from "@/components/app/stage-progress";
@@ -18,19 +20,15 @@ import { EligibilitySnapshot } from "@/components/app/eligibility-snapshot";
 import { LiveRequirementChecklist } from "@/components/app/live-requirement-checklist";
 import { AnalysisResultView } from "@/components/app/analysis-result-view";
 import { JobSeekerDashboard } from "@/components/app/job-seeker-dashboard";
+import { ResumeViewer } from "@/components/app/resume-viewer";
 import { BlurFadeIn } from "@/components/motion/reveal";
 import { GRADIENT_CTA } from "@/lib/category-theme";
 import { createJobSeekerJob, getJobSeekerJob, getReport, getResume, stopJobSeekerJob } from "@/lib/api";
 import { useJobPolling } from "@/lib/use-job-polling";
 import { cn } from "@/lib/utils";
-import type { JdRequirement, JobSeekerAnalysisResponse, RequirementVerdict, ResumeDetail } from "@/lib/types";
-
-function computeProvisionalScore(jdRequirements: JdRequirement[], verdicts: RequirementVerdict[]): number {
-  const totalWeight = jdRequirements.reduce((sum, r) => sum + r.weight, 0);
-  if (totalWeight === 0) return 0;
-  const satisfiedWeight = verdicts.filter((v) => v.satisfied).reduce((sum, v) => sum + v.weight, 0);
-  return (satisfiedWeight / totalWeight) * 100;
-}
+import { SAMPLE_SETS } from "@/lib/sample-sets";
+import { computeProvisionalScore } from "@/lib/scoring";
+import type { JobSeekerAnalysisResponse, ResumeDetail } from "@/lib/types";
 
 type View = "dashboard" | "form" | "report" | "resume";
 
@@ -54,19 +52,40 @@ export default function JobSeekerPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
+
+  // "sample" mode swaps the file dropzones for two freely-editable textareas
+  // pre-filled from a chosen role's sample pair -- edits are just string
+  // mutations here, and only get packaged into synthetic .txt Files (same
+  // shape the upload path already produces) at submit time.
+  const [inputMode, setInputMode] = useState<"upload" | "sample">("upload");
+  const [selectedSample, setSelectedSample] = useState<string | null>(null);
+  const [sampleResumeText, setSampleResumeText] = useState("");
+  const [sampleJdText, setSampleJdText] = useState("");
   const [loadingSample, setLoadingSample] = useState(false);
 
   const { status, pollError } = useJobPolling(jobId, getJobSeekerJob);
 
-  const canSubmit = resume && jobDescription && jobRole.trim().length > 0 && !submitting;
+  const canSubmit =
+    !submitting &&
+    jobRole.trim().length > 0 &&
+    (inputMode === "upload"
+      ? resume && jobDescription
+      : sampleResumeText.trim().length > 0 && sampleJdText.trim().length > 0);
 
   async function handleSubmit() {
-    if (!resume || !jobDescription) return;
     setSubmitError(null);
     setSubmitting(true);
     setResultOverride(null);
     try {
-      const id = await createJobSeekerJob(resume, jobDescription, jobRole.trim());
+      const [resumeFile, jdFile] =
+        inputMode === "upload"
+          ? [resume, jobDescription]
+          : [
+              new File([sampleResumeText], "sample-resume.txt", { type: "text/plain" }),
+              new File([sampleJdText], "sample-job-description.txt", { type: "text/plain" }),
+            ];
+      if (!resumeFile || !jdFile) return;
+      const id = await createJobSeekerJob(resumeFile, jdFile, jobRole.trim());
       setJobId(id);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to start analysis");
@@ -75,19 +94,20 @@ export default function JobSeekerPage() {
     }
   }
 
-  async function handleUseSample() {
+  async function handleSelectSample(role: string, resumePath: string, jdPath: string) {
     setSubmitError(null);
+    setSelectedSample(role);
     setLoadingSample(true);
     try {
-      const [resumeBlob, jdBlob] = await Promise.all([
-        fetch("/samples/sample-resume.txt").then((r) => r.blob()),
-        fetch("/samples/sample-job-description.txt").then((r) => r.blob()),
+      const [resumeText, jdText] = await Promise.all([
+        fetch(resumePath).then((r) => r.text()),
+        fetch(jdPath).then((r) => r.text()),
       ]);
-      setResume(new File([resumeBlob], "sample-resume.txt", { type: "text/plain" }));
-      setJobDescription(new File([jdBlob], "sample-job-description.txt", { type: "text/plain" }));
-      setJobRole("AI Engineer");
+      setSampleResumeText(resumeText);
+      setSampleJdText(jdText);
+      setJobRole(role);
     } catch {
-      setSubmitError("Couldn't load the sample files. Please try again or upload your own.");
+      setSubmitError("Couldn't load that sample. Please try again or upload your own files.");
     } finally {
       setLoadingSample(false);
     }
@@ -133,6 +153,10 @@ export default function JobSeekerPage() {
     setResume(null);
     setJobDescription(null);
     setJobRole("");
+    setInputMode("upload");
+    setSelectedSample(null);
+    setSampleResumeText("");
+    setSampleJdText("");
     setSubmitError(null);
     setViewedReport(null);
     setViewedReportId(null);
@@ -262,9 +286,7 @@ export default function JobSeekerPage() {
                     Uploaded {new Date(viewedResume.created_at).toLocaleDateString()}
                   </span>
                 </div>
-                <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/80">
-                  {viewedResume.resume_text}
-                </p>
+                <ResumeViewer key={viewedResume.id} resume={viewedResume} />
               </Card>
             )}
           </motion.div>
@@ -279,37 +301,83 @@ export default function JobSeekerPage() {
             transition={{ type: "spring", stiffness: 280, damping: 30 }}
           >
             <Card className="flex flex-col gap-6 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
-                <p className="text-xs text-muted-foreground">
-                  Don&apos;t have files handy? Try a sample resume and AI Engineer job description.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleUseSample}
-                  disabled={loadingSample}
-                >
-                  <Wand2 className="size-3.5" />
-                  {loadingSample ? "Loading sample..." : "Use a sample"}
-                </Button>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FileDropzone
-                  label="Resume"
-                  hint="PDF, DOCX, or TXT"
-                  accept=".pdf,.docx,.txt"
-                  file={resume}
-                  onChange={setResume}
-                />
-                <FileDropzone
-                  label="Job Description"
-                  hint="PDF, DOCX, or TXT"
-                  accept=".pdf,.docx,.txt"
-                  file={jobDescription}
-                  onChange={setJobDescription}
-                />
-              </div>
+              <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "upload" | "sample")}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="upload">Upload files</TabsTrigger>
+                  <TabsTrigger value="sample" className="gap-1.5">
+                    <Wand2 className="size-3.5" />
+                    Try a sample
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="upload" className="flex flex-col gap-6 pt-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FileDropzone
+                      label="Resume"
+                      hint="PDF, DOCX, or TXT"
+                      accept=".pdf,.docx,.txt"
+                      file={resume}
+                      onChange={setResume}
+                    />
+                    <FileDropzone
+                      label="Job Description"
+                      hint="PDF, DOCX, or TXT"
+                      accept=".pdf,.docx,.txt"
+                      file={jobDescription}
+                      onChange={setJobDescription}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="sample" className="flex flex-col gap-4 pt-4">
+                  <div className="flex flex-wrap gap-2">
+                    {SAMPLE_SETS.map((s) => (
+                      <Button
+                        key={s.role}
+                        type="button"
+                        variant={selectedSample === s.role ? "default" : "outline"}
+                        size="sm"
+                        disabled={loadingSample}
+                        onClick={() => handleSelectSample(s.role, s.resumePath, s.jdPath)}
+                      >
+                        {s.role}
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedSample ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Loaded the {selectedSample} sample -- edit either side freely before analyzing.
+                      </p>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="sample-resume">Resume</Label>
+                          <Textarea
+                            id="sample-resume"
+                            className="min-h-64 font-mono text-xs"
+                            value={sampleResumeText}
+                            onChange={(e) => setSampleResumeText(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="sample-jd">Job Description</Label>
+                          <Textarea
+                            id="sample-jd"
+                            className="min-h-64 font-mono text-xs"
+                            value={sampleJdText}
+                            onChange={(e) => setSampleJdText(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                      Pick a role above to load an editable sample resume and job description.
+                    </p>
+                  )}
+                </TabsContent>
+              </Tabs>
+
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="job-role">Job role</Label>
                 <Input

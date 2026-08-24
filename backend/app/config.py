@@ -174,6 +174,15 @@ class Settings(BaseSettings):
     job_rate_limit_max_per_window: int = 10
     job_rate_limit_window_seconds: int = 3600
 
+    # The guest demo endpoint has no login barrier at all -- these two caps
+    # are what stand between it and anonymous traffic draining the shared
+    # daily Groq/Gemini/Ollama quota that real signed-up users depend on.
+    # Deliberately much tighter than job_rate_limit_* above. See
+    # enforce_guest_rate_limit in app/core/rate_limit.py.
+    guest_rate_limit_max_per_window: int = 2
+    guest_rate_limit_window_seconds: int = 3600  # 2 guest runs/hour per IP
+    guest_daily_cap: int = 25  # total guest runs/day across everyone combined
+
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""

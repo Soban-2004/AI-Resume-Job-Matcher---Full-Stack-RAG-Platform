@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, Boolean
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,6 +23,14 @@ class Resume(Base):
     user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)  # Supabase auth.users.id
     filename: Mapped[str] = mapped_column(String, nullable=False)
     resume_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The original uploaded bytes, kept alongside the extracted text so the
+    # resume viewer can render the real PDF/DOCX instead of just plain text.
+    # Nullable: rows saved before this field existed have no file to show,
+    # and the viewer falls back to resume_text for those. Small resumes at
+    # this project's scale -- a DB column is simpler than standing up a
+    # separate object-storage integration for it.
+    file_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

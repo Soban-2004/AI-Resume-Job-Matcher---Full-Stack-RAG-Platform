@@ -49,6 +49,23 @@ export async function createJobSeekerJob(
   return data.job_id as string;
 }
 
+export async function createGuestJob(sampleRole: string): Promise<string> {
+  // No auth header -- this is the unauthenticated guest-demo path. Only a
+  // role key is sent, never resume/JD text: the backend looks the actual
+  // sample content up itself (see GUEST_SAMPLES in job_seeker.py) so this
+  // endpoint can never be pointed at arbitrary text.
+  const form = new FormData();
+  form.append("sample_role", sampleRole);
+
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/guest-jobs`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  const data = await res.json();
+  return data.job_id as string;
+}
+
 export async function getJobSeekerJob(jobId: string): Promise<JobStatusResponse> {
   const res = await fetch(`${API_BASE_URL}/api/job-seeker/jobs/${jobId}`);
   if (!res.ok) throw new Error(await parseErrorDetail(res));
@@ -72,6 +89,14 @@ export async function getResume(resumeId: string): Promise<ResumeDetail> {
   });
   if (!res.ok) throw new Error(await parseErrorDetail(res));
   return res.json();
+}
+
+export async function getResumeFileBlob(resumeId: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE_URL}/api/job-seeker/resumes/${resumeId}/file`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  return res.blob();
 }
 
 export async function deleteResume(resumeId: string): Promise<void> {

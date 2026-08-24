@@ -1,0 +1,31 @@
+Priya Nair
+Hyderabad, India
+priya.nair.data@example.com | linkedin.com/in/example
+
+PROFESSIONAL SUMMARY
+Data analyst with 2 years of experience turning raw data into dashboards and decisions for
+product and marketing teams. Strong in SQL, comfortable in Python for deeper analysis.
+
+EXPERIENCE
+
+Data Analyst | Northgate Retail | Hyderabad, India | Jul 2023 - Present
+- Wrote SQL queries against a Snowflake data warehouse to support weekly business reviews.
+- Built and maintained 6+ Tableau dashboards tracking sales, retention, and campaign
+  performance for the marketing team.
+- Used Python (pandas) to clean and analyze survey data, presenting findings to leadership.
+- Designed and analyzed an A/B test for a checkout flow change, contributing to a 5%
+  conversion lift.
+- Maintained Excel-based forecasting models used in monthly planning meetings.
+
+Business Analyst Intern | Coral Insights | Remote | Jan 2023 - Jun 2023
+- Supported the analytics team with ad-hoc SQL pulls and Excel reporting.
+- Helped migrate a set of manual reports into a Power BI dashboard.
+
+EDUCATION
+B.Sc. Statistics, University of Hyderabad (2019-2023)
+
+TECHNICAL SKILLS
+Data & Analysis: SQL, Python (pandas), Excel, A/B Testing
+Visualization: Tableau, Power BI
+Infra: Snowflake
+Other: Git

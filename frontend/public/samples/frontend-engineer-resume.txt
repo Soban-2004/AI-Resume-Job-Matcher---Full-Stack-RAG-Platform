@@ -1,0 +1,38 @@
+Rohan Kapoor
+Bengaluru, India
+rohan.kapoor.dev@example.com | github.com/example | linkedin.com/in/example
+
+PROFESSIONAL SUMMARY
+Frontend engineer with 2 years of experience building production web applications in React
+and TypeScript. Focused on clean, accessible UI and close collaboration with design.
+
+EXPERIENCE
+
+Frontend Engineer | Lumen Software | Bengaluru, India | Sep 2023 - Present
+- Built and maintained customer-facing pages using React, TypeScript, and Next.js.
+- Implemented the company's design system in Tailwind CSS, used across 20+ components.
+- Integrated frontend features with internal REST APIs, handling loading and error states.
+- Wrote component tests with Jest and React Testing Library, raising test coverage on the
+  checkout flow from roughly 30% to 75%.
+- Worked directly with designers in Figma to turn mockups into pixel-accurate UI.
+
+Junior Web Developer | Brightpath Studio | Bengaluru, India | Jun 2022 - Aug 2023
+- Built responsive marketing pages in React for small business clients.
+- Improved page load performance on a client site, reducing Largest Contentful Paint by 35%.
+
+PROJECTS
+
+Personal Portfolio Site (2022)
+- Built and deployed a personal site using Next.js and Tailwind CSS, with a small blog
+  powered by static markdown files.
+
+EDUCATION
+B.E. Information Technology, Bengaluru Institute of Technology (2018-2022)
+
+TECHNICAL SKILLS
+Programming: TypeScript, JavaScript
+Frameworks: React, Next.js
+Styling: Tailwind CSS
+Testing: Jest, React Testing Library
+Design Collaboration: Figma
+Other: REST APIs, Git

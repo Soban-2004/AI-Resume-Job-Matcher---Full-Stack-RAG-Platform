@@ -1,0 +1,33 @@
+Frontend Engineer
+
+Location: Bengaluru, India (Hybrid)
+
+Experience: 1-3 Years
+
+About the Role
+
+We're looking for a Frontend Engineer to build fast, accessible interfaces for our product.
+You'll work closely with design and backend teams to ship polished features in React and
+TypeScript.
+
+Responsibilities
+Build responsive UI components using React and TypeScript.
+Develop and maintain pages and routes using Next.js.
+Style interfaces with Tailwind CSS, following our design system.
+Integrate frontend features with REST APIs.
+Write unit and component tests using Jest and React Testing Library.
+Collaborate with designers in Figma to translate mockups into production UI.
+Optimize for performance and accessibility across devices.
+
+Requirements
+1+ years of experience building production web applications.
+Strong proficiency in React and TypeScript.
+Experience with Next.js or a comparable framework.
+Familiarity with Tailwind CSS or another utility-first CSS approach.
+Comfortable consuming REST APIs from a frontend application.
+Bachelor's degree in Computer Science or equivalent practical experience.
+
+Nice to Have
+Experience with Jest or React Testing Library.
+Familiarity with Figma-to-code workflows.
+Exposure to Git-based CI/CD pipelines.
