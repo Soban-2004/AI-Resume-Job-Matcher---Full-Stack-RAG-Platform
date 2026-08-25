@@ -41,6 +41,7 @@ This isn't a single Streamlit script - it's a real client/server application: a 
 
 - [Why this project is interesting](#-why-this-project-is-interesting)
 - [System architecture](#-system-architecture)
+- [How JD requirements are gathered](#-how-jd-requirements-are-gathered)
 - [How the RAG evidence pipeline works](#-how-the-rag-evidence-pipeline-works)
 - [The recruiter's three-round funnel](#-the-recruiters-three-round-funnel)
 - [The tiered LLM fallback chain](#-the-tiered-llm-fallback-chain)
@@ -61,7 +62,7 @@ This isn't a single Streamlit script - it's a real client/server application: a 
 
 Most "AI resume matcher" projects are a single LLM call wrapped in a chat prompt. This one is built the way a production recruiting tool would actually need to work:
 
-- **Every AI verdict cites its evidence.** A requirement is never marked "satisfied" without a specific resume snippet backing it up — retrieved via hybrid BM25 + dense-vector search, reranked with a cross-encoder, and verified by an LLM whose prompt forces it to quote, not guess.
+- **Every AI verdict cites its evidence.** A requirement is never marked "satisfied" without a specific resume snippet backing it up — retrieved via hybrid BM25 + dense-vector search, reranked by Cohere's hosted rerank API, and verified by an LLM whose prompt forces it to quote, not guess.
 - **LLM cost scales with how much scrutiny a candidate has earned.** A recruiter uploading 50 resumes doesn't get 50 expensive, evidence-grounded reviews — a cheap local prescreen narrows the field first (see [the three-round funnel](#-the-recruiters-three-round-funnel)).
 - **It survives free-tier rate limits.** A three-tier LLM fallback chain (Ollama Cloud → Gemini → Groq) means a single provider's quota exhaustion doesn't take the whole app down mid-session.
 - **The AI Resume Optimizer has a fabrication guardrail.** Rewriting a resume to sound stronger is easy; making sure it never invents a skill, number, or credential the candidate never claimed is the actual hard problem — solved with a dedicated verification pass, not just a "please don't lie" prompt.
@@ -77,14 +78,59 @@ Most "AI resume matcher" projects are a single LLM call wrapped in a chat prompt
 
 ---
 
+## 📋 How JD Requirements Are Gathered
+
+Before anything can be retrieved, cited, or scored, a raw job description has to become a
+structured list of requirements — this is the step that actually happens first, and it's
+easy to miss since the rest of the pipeline just talks about "JD Requirements" as if they
+already exist. It doesn't happen by regex or keyword scraping.
+
+```mermaid
+flowchart TD
+    A["Raw JD text + stated job role<br/>(e.g. 'Backend Engineer')"] --> B["Structured LLM extraction call<br/>forced tool-calling — guaranteed valid JSON, never free text to parse"]
+    B --> C["Filter: technical skills, tools, frameworks,<br/>platforms, databases, methodologies ONLY"]
+    C --> D["Soft skills explicitly excluded<br/>(communication, leadership, teamwork, ...)"]
+    D --> E["Each surviving skill assigned an<br/>importance weight 0-1, based on the job role"]
+    E --> F["dict: {skill_name: weight}<br/>= the JD's requirement list"]
+    F --> G[Feeds the RAG Evidence Pipeline below —<br/>one retrieval + evidence-cited verdict per requirement]
+```
+
+1. **One structured LLM call, not a parser.** `extract_weighted_skills_from_jd` sends the
+   full JD text through a forced-schema tool call (`WeightedSkillList`) — the model can't
+   return prose or a malformed list, only objects shaped `{name, weight}`.
+2. **Only technical requirements survive.** The extraction prompt explicitly instructs the
+   model to pull *only* skills, tools, technologies, platforms, cloud services, databases,
+   frameworks, and methodologies, and to **strictly exclude** soft skills like communication,
+   leadership, teamwork, or adaptability. A JD asking for a "strong communicator" doesn't
+   turn into a scoreable requirement — there'd be no way to cite resume "evidence" for it
+   without the model just guessing.
+3. **Every requirement gets an importance weight, not just a name.** The model is told to
+   weigh each skill's importance *against the stated job role* — the same word ("Kubernetes")
+   scores differently in a senior DevOps posting than in a junior web-dev one. This weight is
+   what makes the final Skill-Based ATS Score a weighted average instead of a flat match count.
+4. **"Do not hallucinate" is an explicit instruction, not an assumption.** The prompt tells
+   the model to return only skills genuinely present in the JD text — the same
+   evidence-grounding philosophy that governs the rest of the pipeline, applied one step
+   earlier, before evidence retrieval even begins.
+5. **This `{skill: weight}` map is what everything downstream operates on** — each pair
+   becomes one JD Requirement node in the pipeline below: retrieved against, evidence-cited,
+   and independently verdicted, never re-derived from the raw JD text again.
+6. **The same extractor runs in reverse on the resume side** (`extract_weighted_skills_from_resume`),
+   but for a different job — it's the recruiter funnel's cheap Round 2 skill-vs-skill
+   narrowing pass (see below), not the final evidence-grounded score.
+
+---
+
 ## 🔍 How the RAG Evidence Pipeline Works
 
 This is the core piece that makes every score explainable instead of a black-box number.
+It picks up exactly where the JD extraction above leaves off — one `{skill, weight}`
+requirement at a time.
 
 ```mermaid
 flowchart TD
     A[Resume Text] --> B[Chunking<br/>~400 chars, overlapping]
-    B --> C[Dense Embeddings<br/>sentence-transformers]
+    B --> C["Dense Embeddings<br/>Cohere embed-v4.0 (hosted)"]
     B --> D[BM25 Sparse Index]
 
     JD[JD Requirement] --> E[Embed Requirement]
@@ -93,7 +139,7 @@ flowchart TD
 
     C --> F[Reciprocal Rank Fusion]
     D --> F
-    F --> G[Cross-Encoder Reranker]
+    F --> G["Cohere Rerank<br/>rerank-v3.5 (hosted)"]
     G --> H[Top-K Evidence Snippets]
 
     H --> I["LLM Rubric Call<br/>(cites evidence, never invents)"]
@@ -250,7 +296,7 @@ flowchart TD
 
 **Backend**
 - FastAPI · Python 3.10+
-- **Retrieval**: `sentence-transformers` (dense embeddings), `rank_bm25` (sparse), a cross-encoder reranker, Qdrant (vector store)
+- **Retrieval**: Cohere `embed-v4.0` (hosted dense embeddings), `rank_bm25` (sparse), Cohere `rerank-v3.5` (hosted reranking), Qdrant (vector store)
 - **LLMs**: Groq, Google Gemini (`google-genai`), Ollama Cloud — tiered fallback chain
 - **Persistence**: Supabase Postgres via SQLAlchemy
 - **Documents**: PyMuPDF, `python-docx` (reading), `fpdf2` (PDF generation)
@@ -291,7 +337,7 @@ Job_Resume_Matcher/
 - Node.js 20+
 - A [Supabase](https://supabase.com) project (Auth + Postgres)
 - A [Qdrant](https://qdrant.tech) instance (cloud or self-hosted)
-- API keys: [Groq](https://console.groq.com), [Google AI Studio](https://aistudio.google.com) (Gemini), optionally [Ollama Cloud](https://ollama.com)
+- API keys: [Groq](https://console.groq.com), [Google AI Studio](https://aistudio.google.com) (Gemini), [Cohere](https://cohere.com) (embeddings + reranking — required, not optional), optionally [Ollama Cloud](https://ollama.com)
 
 ### 1. Clone & configure environment
 
@@ -343,6 +389,7 @@ Visit `http://localhost:3000` — you'll land on the mode picker, then be prompt
 |---|---|
 | `GROQ_API_KEY` | Groq LLM inference (fallback tier 3 + several lighter calls) |
 | `GEMINI_API_KEY` | Gemini Flash Lite (fallback tier 2) |
+| `COHERE_API_KEY` | Dense embeddings (`embed-v4.0`) and reranking (`rerank-v3.5`) — both hosted, required for retrieval to work at all |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Vector store for resume chunk embeddings |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Auth verification |
 | `DATABASE_URL` | Supabase Postgres connection string (SQLAlchemy) |
