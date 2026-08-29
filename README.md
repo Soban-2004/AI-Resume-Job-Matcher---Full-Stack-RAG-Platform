@@ -485,7 +485,7 @@ The gap between "works for me locally" and "safe to charge strangers for" is mos
 
 The natural axis to charge on is **LLM-heavy operations**, since that's the real marginal cost per user:
 
-**Job Seeker side**
+**Job Seeker side**:
 - *Free*: a handful of analyses/month, a capped resume library.
 - *Paid*: unlimited analyses, unlimited optimizer downloads + PDF export, priority processing, full report history.
 
